@@ -107,23 +107,19 @@ SUBROUTINE DIR_TRANS(PSPVOR,PSPDIV,PSPSCALAR,PSPSC3A,PSPSC3B,PSPSC2,&
 !     ------------------------------------------------------------------
 
 USE PARKIND1  ,ONLY : JPIM     ,JPRB
-
-!ifndef INTERFACE
-
-USE TPM_GEN         ,ONLY : NERR, NOUT
-USE TPM_TRANS       ,ONLY : LDIVGP, LSCDERS, LUVDER, LVORGP, LATLON, &
-     &                      NF_SC2, NF_SC3A, NF_SC3B,        &
-     &                      NGPBLKS, NPROMA
-USE TPM_DISTR       ,ONLY : D, NPRTRV, MYSETV
+USE TPM_GEN,ONLY : NERR, NOUT,NPROMATR
+USE TPM_TRANS,ONLY : LDIVGP,LSCDERS,LUVDER,LVORGP,LATLON,NF_SC2,NF_SC3A,NF_SC3B,&
+  NGPBLKS,NPROMA,ZGTF,FOUBUF_IN
+USE TPM_DISTR       ,ONLY : D, NPRTRV, MYSETV,myproc
 USE TPM_FIELDS      ,ONLY : IF_FS_DIR,IF_FS_DIR0,NFLEV,NFLEV0,DTDZBA,DTDZBS,DTDZCA,DTDZCS
 USE TPM_FLT, ONLY: S
 USE TPM_GEOMETRY ,ONLY : G
 USE SET_RESOL_MOD   ,ONLY : SET_RESOL
 USE DIR_TRANS_CTL_MOD ,ONLY : DIR_TRANS_CTL
+USE LTDIR_CTL_MOD   ,ONLY : LTDIR_CTL
+USE FTDIR_CTL_MOD   ,ONLY : FTDIR_CTL
 USE ABORT_TRANS_MOD ,ONLY : ABORT_TRANS
 USE YOMHOOK   ,ONLY : LHOOK,   DR_HOOK,  JPHOOK
-
-!endif INTERFACE
 
 IMPLICIT NONE
 
@@ -154,15 +150,14 @@ REAL(KIND=JPRB),OPTIONAL    ,INTENT(IN) :: PGP2(:,:,:)
 
 ! Local variables
 INTEGER(KIND=JPIM) :: IUBOUND(4),J
-INTEGER(KIND=JPIM) :: IF_UV,IF_UV_G,IF_SCALARS,IF_SCALARS_G,IF_FS,IF_GP
+INTEGER(KIND=JPIM) :: IF_UV,IF_UV_G,IF_SCALARS,IF_SCALARS_G,IF_FS,IF_GP,IF_GPB
 INTEGER(KIND=JPIM) :: IF_SC2_G,IF_SC3A_G,IF_SC3B_G
 REAL(KIND=JPHOOK) :: ZHOOK_HANDLE
 INTEGER(KIND=JPIM) :: JMLOC, IF_PP
 
 !     ------------------------------------------------------------------
 IF (LHOOK) CALL DR_HOOK('DIR_TRANS',0,ZHOOK_HANDLE)
-CALL GSTATS(440,0)
-CALL GSTATS(1808,0)
+
 ! Set current resolution
 CALL SET_RESOL(KRESOL)
 
@@ -190,15 +185,12 @@ LATLON=.FALSE.
 
 IF(PRESENT(KVSETUV)) THEN
   IF_UV_G = UBOUND(KVSETUV,1)
-  DO J=1,IF_UV_G
-    IF(KVSETUV(J) > NPRTRV .OR. KVSETUV(J) < 1) THEN
-      WRITE(NERR,*) 'DIR_TRANS:KVSETUV(J) > NPRTRV ',J,KVSETUV(J),NPRTRV
-      CALL ABORT_TRANS('DIR_TRANS:KVSETUV TOO LONG OR CONTAINS VALUES OUTSIDE RANGE')
-    ENDIF
-    IF(KVSETUV(J) == MYSETV) THEN
-      IF_UV = IF_UV+1
-    ENDIF
-  ENDDO
+  IF(ANY(KVSETUV(1:IF_UV_G) > NPRTRV .OR. KVSETUV(1:IF_UV_G) < 1)) THEN
+    WRITE(NERR,*) 'DIR_TRANS:KVSETUV > NPRTRV ',KVSETUV(:),NPRTRV
+    CALL ABORT_TRANS('DIR_TRANS:KVSETUV TOO LONG OR CONTAINS VALUES OUTSIDE RANGE')
+  ENDIF
+
+  IF_UV = COUNT(KVSETUV(1:IF_UV_G) == MYSETV)
 ELSEIF(PRESENT(PSPVOR)) THEN
   IF_UV = UBOUND(PSPVOR,1)
   IF_UV_G = IF_UV
@@ -206,24 +198,20 @@ ENDIF
 
 IF(PRESENT(KVSETSC)) THEN
   IF_SCALARS_G = UBOUND(KVSETSC,1)
-  DO J=1,IF_SCALARS_G
-    IF(KVSETSC(J) > NPRTRV .OR. KVSETSC(J) < 1) THEN
-      WRITE(NERR,*) 'DIR_TRANS:KVSETSC(J) > NPRTRV ',J,KVSETSC(J),NPRTRV
-      CALL ABORT_TRANS('DIR_TRANS:KVSETSC TOO LONG OR CONTAINS VALUES OUTSIDE RANGE')
-    ENDIF
-    IF(KVSETSC(J) == MYSETV) THEN
-      IF_SCALARS = IF_SCALARS+1
-    ENDIF
-  ENDDO
+  IF(ANY(KVSETSC(1:IF_SCALARS_G) > NPRTRV .OR. KVSETSC(1:IF_SCALARS_G) < 1)) THEN
+    WRITE(NERR,*) 'DIR_TRANS:KVSETSC(J) > NPRTRV ',KVSETSC(:),NPRTRV
+    CALL ABORT_TRANS('DIR_TRANS:KVSETSC TOO LONG OR CONTAINS VALUES OUTSIDE RANGE')
+  ENDIF
+
+  IF_SCALARS = COUNT(KVSETSC(1:IF_SCALARS_G) == MYSETV)
 ELSEIF(PRESENT(PSPSCALAR)) THEN
   IF_SCALARS = UBOUND(PSPSCALAR,1)
   IF_SCALARS_G = IF_SCALARS
 ENDIF
 
 IF(PRESENT(KVSETSC2)) THEN
-  IF(.NOT.PRESENT(PSPSC2)) THEN
-    CALL ABORT_TRANS('DIR_TRANS:KVSETSC2 BUT NOT PSPSC2')
-  ENDIF
+  IF(.NOT.PRESENT(PSPSC2)) CALL ABORT_TRANS('DIR_TRANS:KVSETSC2 BUT NOT PSPSC2')
+
   IF_SC2_G = UBOUND(KVSETSC2,1)
   IF_SCALARS_G = IF_SCALARS_G+IF_SC2_G
   DO J=1,UBOUND(KVSETSC2,1)
@@ -244,9 +232,8 @@ ELSEIF(PRESENT(PSPSC2)) THEN
 ENDIF
 
 IF(PRESENT(KVSETSC3A)) THEN
-  IF(.NOT.PRESENT(PSPSC3A)) THEN
-    CALL ABORT_TRANS('DIR_TRANS:KVSETSC3A BUT NOT PSPSC3A')
-  ENDIF
+  IF(.NOT.PRESENT(PSPSC3A)) CALL ABORT_TRANS('DIR_TRANS:KVSETSC3A BUT NOT PSPSC3A')
+
   IF_SC3A_G = UBOUND(KVSETSC3A,1)
   IF_SCALARS_G = IF_SCALARS_G+IF_SC3A_G*UBOUND(PSPSC3A,3)
   DO J=1,UBOUND(KVSETSC3A,1)
@@ -310,6 +297,14 @@ IF_FS = 2*IF_UV + IF_SCALARS
 !ENDIF
 
 IF_GP = 2*IF_UV_G+IF_SCALARS_G
+
+write(0,*) "UV fields:",IF_UV,IF_UV_G,MYPROC
+write(0,*) "SC fields:",IF_SCALARS,IF_SCALARS_G,MYPROC
+write(0,*) "SC2 fields:",NF_SC2,IF_SC2_G,MYPROC
+write(0,*) "SC3A fields:",NF_SC3A,IF_SC3A_G,MYPROC
+write(0,*) "SC3B fields:",NF_SC3B,IF_SC3B_G,MYPROC
+write(0,*) "GP fields:",IF_GP,MYPROC
+write(0,*) "SP fields:",IF_FS,MYPROC
 
 ! add additional post-processing requirements
 ! (copied from setup_trans.F90. Or does this need to be different here than in setup_trans.F90?)
@@ -517,20 +512,115 @@ IF(IF_SC3B_G > 0) THEN
     CALL ABORT_TRANS('DIR_TRANS:PGP3B MISSING')
   ENDIF
 ENDIF
-CALL GSTATS(1808,1)
 
-!     ------------------------------------------------------------------
+!$ACC KERNELS
+ZGTF(:,:) = 0
+!$ACC END KERNELS
 
-!write(301,*) 'fields ',IF_UV_G,IF_SCALARS_G,IF_GP,IF_FS,IF_UV,IF_SCALARS
-CALL DIR_TRANS_CTL(IF_UV_G,IF_SCALARS_G,IF_GP,IF_FS,IF_UV,IF_SCALARS,&
- & PSPVOR,PSPDIV,PSPSCALAR,KVSETUV,KVSETSC,PGP,&
- & PSPSC3A,PSPSC3B,PSPSC2,KVSETSC3A,KVSETSC3B,KVSETSC2,PGPUV,PGP3A,PGP3B,PGP2)
+IF_GPB = 2*IF_UV_G+IF_SCALARS_G
 
- IF (LHOOK) CALL DR_HOOK('DIR_TRANS',1,ZHOOK_HANDLE)
-CALL GSTATS(440,1)
+IF (NPROMATR > 0 .AND. IF_GPB > NPROMATR) THEN
+  CALL DIR_TRANS_CTL(IF_UV_G,IF_SCALARS_G,IF_GP,IF_FS,IF_UV,IF_SCALARS,&
+    PSPVOR,PSPDIV,PSPSCALAR,KVSETUV,KVSETSC,PGP,&
+    PSPSC3A,PSPSC3B,PSPSC2,KVSETSC3A,KVSETSC3B,KVSETSC2,PGPUV,PGP3A,PGP3B,PGP2)
+ELSE
+  !$ACC DATA CREATE(FOUBUF_IN)
 
-!     ------------------------------------------------------------------
-!endif INTERFACE
+  if (present(pgpuv)) then
+    do j=1,if_uv_g
+      write(nout,*) "pgpuv:",j,mnx3(pgpuv(:,:,j,:))
+    end do
+  end if
+
+  if (present(pgp)) then
+    do j=1,if_scalars_g
+      write(nout,*) "pgp:",j,mnx2(pgp(:,j,:))
+    end do
+  end if
+
+  if (present(pgp2)) then
+    do j=1,size(pgp2,2)
+      write(nout,*) "pgp2:",j,mnx2(pgp2(:,j,:))
+    end do
+  end if
+
+  if (present(pgp3a)) then
+    do j=1,size(pgp3a,3)
+      write(nout,*) "pgp3a:",j,mnx3(pgp3a(:,:,j,:))
+    end do
+  end if
+
+  if (present(pgp3b)) then
+    do j=1,size(pgp3b,3)
+      write(nout,*) "pgp3b:",j,mnx3(pgp3b(:,:,j,:))
+    end do
+  end if
+
+  CALL FTDIR_CTL(IF_UV_G,IF_SCALARS_G,IF_GP,IF_FS,KVSETUV=KVSETUV,KVSETSC=KVSETSC,&
+   & KVSETSC3A=KVSETSC3A,KVSETSC3B=KVSETSC3B,KVSETSC2=KVSETSC2,&
+   & PGP=PGP,PGPUV=PGPUV,PGP3A=PGP3A,PGP3B=PGP3B,PGP2=PGP2)
+
+  !$ACC DATA COPYOUT(PSPVOR,PSPDIV) IF(IF_UV > 0)
+  !$ACC DATA COPYOUT(PSPSCALAR) IF(IF_SCALARS > 0 .AND. PRESENT(PSPSCALAR))
+  !$ACC DATA COPYOUT(PSPSC2) IF(IF_SCALARS > 0 .AND. PRESENT(PSPSC2) .AND. NF_SC2 > 0)
+  !$ACC DATA COPYOUT(PSPSC3A) IF(IF_SCALARS > 0 .AND. PRESENT(PSPSC3A) .AND. NF_SC3A > 0)
+  !$ACC DATA COPYOUT(PSPSC3B) IF(IF_SCALARS > 0 .AND. PRESENT(PSPSC3B) .AND. NF_SC3B > 0)
+
+   CALL LTDIR_CTL(IF_FS,IF_UV,IF_SCALARS,PSPVOR=PSPVOR,PSPDIV=PSPDIV,PSPSCALAR=PSPSCALAR,&
+    & PSPSC3A=PSPSC3A,PSPSC3B=PSPSC3B,PSPSC2=PSPSC2)
+
+  !$ACC END DATA
+  !$ACC END DATA
+  !$ACC END DATA
+  !$ACC END DATA
+  !$ACC END DATA
+  !$ACC END DATA
+
+  write(nout,*) "vor/div:",present(pspvor),present(pspdiv)
+  if (if_uv > 0) then
+    do j=1,if_uv
+      write(nout,*) "vor:",j,minval(pspvor(j,:)),maxval(pspvor(j,:))
+      write(nout,*) "div:",j,minval(pspdiv(j,:)),maxval(pspdiv(j,:))
+    end do
+  end if
+
+  if (if_scalars) then
+    if (present(pspscalar)) then
+      do j=1,if_scalars
+        write(nout,*) "scalar:",j,minval(pspscalar(j,:)),maxval(pspscalar(j,:))
+      end do
+    else
+      if (present(pspsc2).and.nf_sc2 > 0) then
+      do j=1,nf_sc2
+        write(nout,*) "sc2:",j,minval(pspsc2(j,:)),maxval(pspsc2(j,:))
+      end do
+      end if
+      if (present(pspsc3a).and.nf_sc3a > 0) then
+      do j=1,nf_sc3a
+        write(nout,*) "sc3a (=t):",j,minval(pspsc3a(j,:,1)),maxval(pspsc3a(j,:,1))
+      end do
+      end if
+    end if
+  end if
+ENDIF
+
+IF (LHOOK) CALL DR_HOOK('DIR_TRANS',1,ZHOOK_HANDLE)
+contains
+function mnx2(x) result(mnx)
+   real(kind=jprb),intent(in) :: x(:,:)
+
+   real :: mnx(3)
+
+   mnx(:) = (/minval(x),sum(x)/size(x),maxval(x)/)
+end function
+
+function mnx3(x) result(mnx)
+   real(kind=jprb),intent(in) :: x(:,:,:)
+
+   real :: mnx(3)
+
+   mnx(:) = (/minval(x),sum(x)/size(x),maxval(x)/)
+end function
 
 END SUBROUTINE DIR_TRANS
 

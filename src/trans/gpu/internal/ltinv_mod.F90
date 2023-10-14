@@ -103,7 +103,6 @@ MODULE LTINV_MOD
     END SUBROUTINE cudaProfilerStop
   END INTERFACE
   
-  
   INTEGER(KIND=JPIM), INTENT(IN) :: KF_OUT_LT
   INTEGER(KIND=JPIM), INTENT(IN) :: KF_UV
   INTEGER(KIND=JPIM), INTENT(IN) :: KF_SCALARS
@@ -120,33 +119,16 @@ MODULE LTINV_MOD
   INTEGER(KIND=JPIM),OPTIONAL,INTENT(IN)  :: KFLDPTRUV(:)
   INTEGER(KIND=JPIM),OPTIONAL,INTENT(IN)  :: KFLDPTRSC(:)
   
-  
   EXTERNAL  FSPGL_PROC
   OPTIONAL  FSPGL_PROC
   
-  !REAL(KIND=JPRBT) :: ZEPSNM(d%nump,0:R%NTMAX+2)
-
   INTEGER(KIND=JPIM) :: IFC, ISTA, IIFC, IDGLU
   INTEGER(KIND=JPIM) :: IVORL,IVORU,IDIVL,IDIVU,IUL,IUU,IVL,IVU,ISL,ISU,IDL,IDU
   INTEGER(KIND=JPIM) :: IFIRST, ILAST, IDIM1,IDIM2,IDIM3,J3
-  
-  REAL(KIND=JPHOOK) :: ZHOOK_HANDLE
-  !CHARACTER(LEN=10) :: CLHOOK
-  
-  
   INTEGER(KIND=JPIM) :: KM
   INTEGER(KIND=JPIM) :: KMLOC
+  REAL(KIND=JPHOOK) :: ZHOOK_HANDLE
   
-  
-  !call cudaProfilerStart
-  
-  
-  !     ------------------------------------------------------------------
-  
-  !*       1.       PERFORM LEGENDRE TRANFORM.
-  !                 --------------------------
-  
-  !WRITE(CLHOOK,FMT='(A,I4.4)') 'LTINV_',KM
   IF (LHOOK) CALL DR_HOOK('LTINV_MOD',0,ZHOOK_HANDLE)
   
   !     ------------------------------------------------------------------
@@ -161,13 +143,6 @@ MODULE LTINV_MOD
   !*       1.    PREPARE ZEPSNM.
   !              ---------------
 
-  !IF ( KF_UV > 0 .OR. KF_SCDERS > 0 ) THEN
-  !  CALL PREPSNM(ZEPSNM)
-  !  !$ACC update host(ZEPSNM)
-  !ENDIF
-
-! COPY FROM PSPXXXX TO ZIA
-
   IF (KF_UV > 0) THEN
     IVORL = 1
     IVORU = 2*KF_UV
@@ -179,30 +154,23 @@ MODULE LTINV_MOD
     IVU   = 8*KF_UV
   
     IDIM2=UBOUND(PSPVOR,2)
-    CALL GSTATS(431,0)
     !$ACC DATA COPYIN(PSPVOR,PSPDIV)
-    CALL GSTATS(431,1)
     CALL PRFI1B(ZIA(IVORL:IVORU,:,:),PSPVOR,KF_UV,IDIM2,KFLDPTRUV)
     CALL PRFI1B(ZIA(IDIVL:IDIVU,:,:),PSPDIV,KF_UV,IDIM2,KFLDPTRUV)
     !$ACC END DATA
   
-  !     ------------------------------------------------------------------
-  
     CALL VDTUV(KF_UV,ZEPSNM,ZIA(IVORL:IVORU,:,:),ZIA(IDIVL:IDIVU,:,:),&
-             & ZIA(IUL:IUU,:,:),ZIA(IVL:IVU,:,:))
+     & ZIA(IUL:IUU,:,:),ZIA(IVL:IVU,:,:))
     ILAST = ILAST+8*KF_UV
-  
   ENDIF
   
   IF(KF_SCALARS > 0)THEN
     IF(PRESENT(PSPSCALAR)) THEN
       IFIRST = ILAST+1
-      ILAST  = IFIRST - 1 + 2*KF_SCALARS
+      ILAST  = IFIRST-1+2*KF_SCALARS
   
       IDIM2=UBOUND(PSPSCALAR,2)
-      CALL GSTATS(431,0)
       !$ACC DATA COPYIN(PSPSCALAR)
-      CALL GSTATS(431,1)
       CALL PRFI1B(ZIA(IFIRST:ILAST,:,:),PSPSCALAR(:,:),KF_SCALARS,IDIM2,KFLDPTRSC)
       !$ACC END DATA
     ELSE
@@ -210,22 +178,19 @@ MODULE LTINV_MOD
         IFIRST = ILAST+1
         ILAST  = IFIRST-1+2*NF_SC2
         IDIM2=UBOUND(PSPSC2,2)
-        CALL GSTATS(431,0)
         !$ACC DATA COPYIN(PSPSC2)
-        CALL GSTATS(431,1)
         CALL PRFI1B(ZIA(IFIRST:ILAST,:,:),PSPSC2(:,:),NF_SC2,IDIM2)
         !$ACC END DATA
       ENDIF
       IF(PRESENT(PSPSC3A) .AND. NF_SC3A > 0) THEN
         IDIM1=NF_SC3A
         IDIM3=UBOUND(PSPSC3A,3)
-        IFIRST = ILAST+1
-        ILAST  = IFIRST-1+2*IDIM1
         IDIM2=UBOUND(PSPSC3A,2)
-        CALL GSTATS(431,0)
         !$ACC DATA COPYIN(PSPSC3A)
-        CALL GSTATS(431,1)
         DO J3=1,IDIM3
+          IFIRST = ILAST+1
+          ILAST  = IFIRST-1+2*IDIM1
+
           CALL PRFI1B(ZIA(IFIRST:ILAST,:,:),PSPSC3A(:,:,J3),IDIM1,IDIM2)
         ENDDO
         !$ACC END DATA
@@ -234,9 +199,7 @@ MODULE LTINV_MOD
         IDIM1=NF_SC3B
         IDIM3=UBOUND(PSPSC3B,3)
         IDIM2=UBOUND(PSPSC3B,2)
-        CALL GSTATS(431,0)
         !$ACC DATA COPYIN(PSPSC3B)
-        CALL GSTATS(431,1)
         DO J3=1,IDIM3
           IFIRST = ILAST+1
           ILAST  = IFIRST-1+2*IDIM1
@@ -246,6 +209,7 @@ MODULE LTINV_MOD
         !$ACC END DATA
       ENDIF
     ENDIF
+
     IF(ILAST /= 8*KF_UV+2*KF_SCALARS) THEN
       WRITE(0,*) 'LTINV:KF_UV,KF_SCALARS,ILAST ',KF_UV,KF_SCALARS,ILAST
       CALL ABORT_TRANS('LTINV_MOD:ILAST /= 8*KF_UV+2*KF_SCALARS')
@@ -253,61 +217,36 @@ MODULE LTINV_MOD
   ENDIF
   
   IF (KF_SCDERS > 0) THEN
-  !   stop 'Error: code path not (yet) supported in GPU version'
+     ! stop 'Error: code path not (yet) supported in GPU version'
      ISL = 2*(4*KF_UV)+1
      ISU = ISL+2*KF_SCALARS-1
      IDL = 2*(4*KF_UV+KF_SCALARS)+1
      IDU = IDL+2*KF_SCDERS-1
      CALL SPNSDE(KF_SCALARS,ZEPSNM,ZIA(ISL:ISU,:,:),ZIA(IDL:IDU,:,:))
- ENDIF
-  
-  !     ------------------------------------------------------------------
-  
+  ENDIF
   
   !*       4.    INVERSE LEGENDRE TRANSFORM.
   !              ---------------------------
 
-  ! FROM ZIA TO ZAOA1 and ZSOA1
-  
   ISTA = 1
   IFC  = 2*KF_OUT_LT
-  IF(KF_UV > 0 .AND. .NOT. LVORGP) THEN
-     ISTA = ISTA+2*KF_UV
-  ENDIF
-  IF(KF_UV > 0 .AND. .NOT. LDIVGP) THEN
-     ISTA = ISTA+2*KF_UV
-  ENDIF
+  IF(KF_UV > 0 .AND. .NOT. LVORGP) ISTA = ISTA+2*KF_UV
+  IF(KF_UV > 0 .AND. .NOT. LDIVGP) ISTA = ISTA+2*KF_UV
 
   IF( KF_OUT_LT > 0 ) THEN
-  !call cudaProfilerStart
-  CALL LEINV(IFC,KF_OUT_LT,ZIA(ISTA:ISTA+IFC-1,:,:),ZAOA1,ZSOA1)
-  !call cudaProfilerStop
+    CALL LEINV(IFC,KF_OUT_LT,ZIA(ISTA:ISTA+IFC-1,:,:),ZAOA1,ZSOA1)
 
-  !     ------------------------------------------------------------------
+    ! RECOMBINATION SYMMETRIC/ANTISYMMETRIC PART.
+    CALL ASRE1B(KF_OUT_LT,ZAOA1,ZSOA1)
   
-  !*       5.    RECOMBINATION SYMMETRIC/ANTISYMMETRIC PART.
-  !              --------------------------------------------
+    ! OPTIONAL COMPUTATIONS IN FOURIER SPACE
+    IF(PRESENT(FSPGL_PROC)) THEN
+      stop 'Error: SPGL_PROC is not (yet) optimized in GPU version'
+      CALL FSPGL_INT(KF_UV,KF_SCALARS,KF_SCDERS,KF_OUT_LT,FSPGL_PROC,KFLDPTRUV,KFLDPTRSC)
+    ENDIF
+  ENDIF
 
-  !FROM ZAOA1/ZSOA to FOUBUF_IN
-   
-  !CALL ASRE1B(KF_OUT_LT,ZAOA1,ZSOA1,ISTAN,ISTAS)
-  CALL ASRE1B(KF_OUT_LT,ZAOA1,ZSOA1)
-  !     ------------------------------------------------------------------
-  
-  !     6. OPTIONAL COMPUTATIONS IN FOURIER SPACE
-  
-  
-  IF(PRESENT(FSPGL_PROC)) THEN
-   stop 'Error: SPGL_PROC is not (yet) optimized in GPU version'
-    CALL FSPGL_INT(KF_UV,KF_SCALARS,KF_SCDERS,KF_OUT_LT,FSPGL_PROC,&
-     & KFLDPTRUV,KFLDPTRSC)
-  ENDIF
-  
-  ENDIF
   IF (LHOOK) CALL DR_HOOK('LTINV_MOD',1,ZHOOK_HANDLE)
-  !     ------------------------------------------------------------------
-  
-  !call cudaProfilerStop
   
   END SUBROUTINE LTINV
   END MODULE LTINV_MOD

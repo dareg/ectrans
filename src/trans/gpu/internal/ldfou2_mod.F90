@@ -61,43 +61,32 @@ USE TPM_DISTR       ,ONLY : D,D_NUMP,D_MYMS
 USE TPM_DIM         ,ONLY : R, R_NDGNH, R_NDGL
 USE TPM_GEOMETRY    ,ONLY : G, G_NDGLU
 
-!
-
 IMPLICIT NONE
 
-
-!     DUMMY INTEGER SCALARS
 INTEGER(KIND=JPIM), INTENT(IN) :: KF_UV
-INTEGER(KIND=JPIM) :: KM,KMLOC
-
 REAL(KIND=JPRBT) ,INTENT(INOUT) :: PAIA(:,:,:)
 !REAL(KIND=JPRBT) ,INTENT(INOUT) :: PSIA(:,:,:),   PAIA(:,:,:)
 
-!     LOCAL INTEGER SCALARS
-INTEGER(KIND=JPIM) :: J, JGL ,IFLD ,ISL, IGLS
+INTEGER(KIND=JPIM) :: KM,KMLOC
+INTEGER(KIND=JPIM) :: J, JGL ,ISL, IGLS
 
 !     ------------------------------------------------------------------
 
 !*       1.    DIVIDE U V BY A*COS(THETA)
 !              --------------------------
 
-IFLD = 4*KF_UV
-IF( IFLD > 0 ) THEN
+IF( KF_UV == 0 ) RETURN
 
-!$ACC DATA &
-!$ACC& PRESENT(F,F%RACTHE,D,D_NUMP,D_MYMS,R_NDGNH,R_NDGL,G_NDGLU) &
-!$ACC& PRESENT(PAIA)
-
-!loop over wavenumber
+!$ACC DATA PRESENT(F,F%RACTHE,D,D_NUMP,D_MYMS,R_NDGNH,R_NDGL,G_NDGLU,PAIA)
 
 !$ACC PARALLEL LOOP COLLAPSE(3) PRIVATE(KM,ISL,IGLS) DEFAULT(NONE)
 DO KMLOC=1,D_NUMP
   DO JGL=1,R_NDGNH
     DO J=1,4*KF_UV
        KM = D_MYMS(KMLOC)
-       ISL  = MAX(R_NDGNH-G_NDGLU(KM)+1,1)
+       ISL = MAX(R_NDGNH-G_NDGLU(KM)+1,1)
 !*       1.1      U AND V
-       if (JGL .ge. ISL) then
+       if (JGL >= ISL) then
          IGLS = R_NDGL+1-JGL
          PAIA(J,JGL,KMLOC) = PAIA(J,JGL,KMLOC)*F%RACTHE(JGL)
 !         PSIA(J,JGL,KMLOC) = PSIA(J,JGL,KMLOC)*F%RACTHE(JGL)
@@ -106,10 +95,6 @@ DO KMLOC=1,D_NUMP
    ENDDO
 ENDDO
 !$ACC END DATA
-
-ENDIF
-
-!     ------------------------------------------------------------------
 
 END SUBROUTINE LDFOU2
 END MODULE LDFOU2_MOD

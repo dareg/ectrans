@@ -128,7 +128,6 @@ IF ( KMODE == -1 ) THEN
 DO KMLOC=1,D_NUMP
    DO J=1,R_NDGNH   
       DO JK=1,KFC
-         
          KM = D_MYMS(KMLOC)   
          KDGLU = MIN(R_NDGNH,G_NDGLU(KM))
          IF (J .LE. KDGLU) THEN

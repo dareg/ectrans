@@ -8,6 +8,8 @@
 !
 
 MODULE DIR_TRANS_CTL_MOD
+USE PARKIND1  ,ONLY : JPIM     ,JPRB
+
 CONTAINS
 SUBROUTINE DIR_TRANS_CTL(KF_UV_G,KF_SCALARS_G,KF_GP,KF_FS,KF_UV,KF_SCALARS,&
  & PSPVOR,PSPDIV,PSPSCALAR,KVSETUV,KVSETSC,PGP,&
@@ -71,23 +73,14 @@ SUBROUTINE DIR_TRANS_CTL(KF_UV_G,KF_SCALARS_G,KF_GP,KF_FS,KF_UV,KF_SCALARS,&
 
 !     ------------------------------------------------------------------
 
-USE PARKIND1  ,ONLY : JPIM     ,JPRB
-
-USE TPM_GEN         ,ONLY : NPROMATR
+USE TPM_GEN         ,ONLY : nout,NPROMATR
 USE TPM_TRANS       ,ONLY : FOUBUF_IN, NF_SC2, NF_SC3A, NF_SC3B
-!USE TPM_DISTR
-
-USE SHUFFLE_MOD     ,ONLY : SHUFFLE
-USE FIELD_SPLIT_MOD ,ONLY : FIELD_SPLIT
 USE LTDIR_CTL_MOD   ,ONLY : LTDIR_CTL
 USE FTDIR_CTL_MOD   ,ONLY : FTDIR_CTL
-USE TPM_TRANS       ,ONLY : ZGTF
-use nvtx
-!
+USE SHUFFLE_MOD     ,ONLY : SHUFFLE
+USE FIELD_SPLIT_MOD ,ONLY : FIELD_SPLIT
 
 IMPLICIT NONE
-
-! Declaration of arguments
 
 INTEGER(KIND=JPIM), INTENT(IN) :: KF_UV_G
 INTEGER(KIND=JPIM), INTENT(IN) :: KF_SCALARS_G
@@ -112,25 +105,17 @@ REAL(KIND=JPRB)    ,OPTIONAL, INTENT(IN)  :: PGP3A(:,:,:,:)
 REAL(KIND=JPRB)    ,OPTIONAL, INTENT(IN)  :: PGP3B(:,:,:,:)
 REAL(KIND=JPRB)    ,OPTIONAL, INTENT(IN)  :: PGP2(:,:,:)
 
-! Local variables
-
 INTEGER(KIND=JPIM) :: IPTRGP(KF_GP),IPTRSPUV(NPROMATR),IPTRSPSC(NPROMATR)
 INTEGER(KIND=JPIM) :: ISHFUV_G(KF_GP),ISHFSC_G(KF_GP)
 INTEGER(KIND=JPIM) :: IVSETUV(KF_GP),IVSETSC(KF_GP)
 INTEGER(KIND=JPIM) :: IBLKS,JBLK,ISTUV_G,IENUV_G
 INTEGER(KIND=JPIM) :: IF_UV_G,IF_UV,ISTUV,IF_SCALARS,IF_SCALARS_G,IF_FS,IF_GP
-INTEGER(KIND=JPIM) :: JFLD,ISTSC_G,IENSC_G,ISTSC,IENSC,IENUV,IF_GPB
-
-
-!     ------------------------------------------------------------------
+INTEGER(KIND=JPIM) :: jf,JFLD,ISTSC_G,IENSC_G,ISTSC,IENSC,IENUV,IF_GPB
 
 ! Perform transform
 
-!$ACC KERNELS
-ZGTF(:,:) = 0
-!$ACC END KERNELS
-
 IF_GPB = 2*KF_UV_G+KF_SCALARS_G
+
 IF(NPROMATR > 0 .AND. IF_GPB > NPROMATR) THEN
 
   ! Fields to be split into packets
@@ -179,44 +164,105 @@ IF(NPROMATR > 0 .AND. IF_GPB > NPROMATR) THEN
      & PSPVOR=PSPVOR,PSPDIV=PSPDIV,PSPSCALAR=PSPSCALAR,&
      & KFLDPTRUV=IPTRSPUV,KFLDPTRSC=IPTRSPSC)
     !$ACC END DATA
-    
   ENDDO
 ELSE
-
   ! No splitting of fields, transform done in one go
-  call nvtxStartRange("DIRTRANS_nodata")
-
   !$ACC DATA CREATE(FOUBUF_IN)
-  call nvtxStartRange("FTDIR")
-  CALL FTDIR_CTL(KF_UV_G,KF_SCALARS_G,KF_GP,KF_FS,&
-   & KVSETUV=KVSETUV,KVSETSC=KVSETSC,&
+
+  if (present(pgpuv)) then
+    do jf=1,kf_uv_g
+      write(nout,*) "pgpuv:",jf,mnx3(pgpuv(:,:,jf,:))
+    end do
+  end if
+
+  if (present(pgp)) then
+    do jf=1,kf_scalars_g
+      write(nout,*) "pgp:",jf,mnx2(pgp(:,jf,:))
+    end do
+  end if
+
+  if (present(pgp2)) then
+    do jf=1,size(pgp2,2)
+      write(nout,*) "pgp2:",jf,mnx2(pgp2(:,jf,:))
+    end do
+  end if
+
+  if (present(pgp3a)) then
+    do jf=1,size(pgp3a,3)
+      write(nout,*) "pgp3a:",jf,mnx3(pgp3a(:,:,jf,:))
+    end do
+  end if
+
+  if (present(pgp3b)) then
+    do jf=1,size(pgp3b,3)
+      write(nout,*) "pgp3b:",jf,mnx3(pgp3b(:,:,jf,:))
+    end do
+  end if
+
+  CALL FTDIR_CTL(KF_UV_G,KF_SCALARS_G,KF_GP,KF_FS,KVSETUV=KVSETUV,KVSETSC=KVSETSC,&
    & KVSETSC3A=KVSETSC3A,KVSETSC3B=KVSETSC3B,KVSETSC2=KVSETSC2,&
    & PGP=PGP,PGPUV=PGPUV,PGP3A=PGP3A,PGP3B=PGP3B,PGP2=PGP2)
-  call nvtxEndRange
 
-  call nvtxStartRange("LTDIR")
   !$ACC DATA COPYOUT(PSPVOR,PSPDIV) IF(KF_UV > 0)
   !$ACC DATA COPYOUT(PSPSCALAR) IF(KF_SCALARS > 0 .AND. PRESENT(PSPSCALAR))
   !$ACC DATA COPYOUT(PSPSC2) IF(KF_SCALARS > 0 .AND. PRESENT(PSPSC2) .AND. NF_SC2 > 0)
   !$ACC DATA COPYOUT(PSPSC3A) IF(KF_SCALARS > 0 .AND. PRESENT(PSPSC3A) .AND. NF_SC3A > 0)
   !$ACC DATA COPYOUT(PSPSC3B) IF(KF_SCALARS > 0 .AND. PRESENT(PSPSC3B) .AND. NF_SC3B > 0)
-   CALL LTDIR_CTL(KF_FS,KF_UV,KF_SCALARS, &
-    & PSPVOR=PSPVOR,PSPDIV=PSPDIV,PSPSCALAR=PSPSCALAR,&
-    & PSPSC3A=PSPSC3A,PSPSC3B=PSPSC3B,PSPSC2=PSPSC2)
-   call nvtxEndRange
-  CALL GSTATS(430,0)
-  !$ACC END DATA
-  !$ACC END DATA
-  !$ACC END DATA
-  !$ACC END DATA
-  !$ACC END DATA
-  !$ACC END DATA
-  CALL GSTATS(430,1)
-  call nvtxEndRange
 
+   CALL LTDIR_CTL(KF_FS,KF_UV,KF_SCALARS,PSPVOR=PSPVOR,PSPDIV=PSPDIV,PSPSCALAR=PSPSCALAR,&
+    & PSPSC3A=PSPSC3A,PSPSC3B=PSPSC3B,PSPSC2=PSPSC2)
+
+  !$ACC END DATA
+  !$ACC END DATA
+  !$ACC END DATA
+  !$ACC END DATA
+  !$ACC END DATA
+  !$ACC END DATA
+
+  write(nout,*) "vor/div:",present(pspvor),present(pspdiv)
+  if (kf_uv > 0) then
+    do jf=1,kf_uv
+      write(nout,*) "vor:",jf,minval(pspvor(jf,:)),maxval(pspvor(jf,:))
+      write(nout,*) "div:",jf,minval(pspdiv(jf,:)),maxval(pspdiv(jf,:))
+    end do
+  end if
+
+  if (kf_scalars) then
+    if (present(pspscalar)) then
+      do jf=1,kf_scalars
+        write(nout,*) "scalar:",jf,minval(pspscalar(jf,:)),maxval(pspscalar(jf,:))
+      end do
+    else
+      if (present(pspsc2).and.nf_sc2 > 0) then
+      do jf=1,nf_sc2
+        write(nout,*) "sc2:",jf,minval(pspsc2(jf,:)),maxval(pspsc2(jf,:))
+      end do
+      end if
+      if (present(pspsc3a).and.nf_sc3a > 0) then
+      do jf=1,nf_sc3a
+        write(nout,*) "sc3a (=t):",jf,minval(pspsc3a(jf,:,1)),maxval(pspsc3a(jf,:,1))
+      end do
+      end if
+    end if
+  end if
 ENDIF
 
-!     ------------------------------------------------------------------
-
 END SUBROUTINE DIR_TRANS_CTL
+
+function mnx2(x) result(mnx)
+   real(kind=jprb),intent(in) :: x(:,:)
+
+   real :: mnx(3)
+
+   mnx(:) = (/minval(x),sum(x)/size(x),maxval(x)/)
+end function
+
+function mnx3(x) result(mnx)
+   real(kind=jprb),intent(in) :: x(:,:,:)
+
+   real :: mnx(3)
+
+   mnx(:) = (/minval(x),sum(x)/size(x),maxval(x)/)
+end function
+
 END MODULE DIR_TRANS_CTL_MOD

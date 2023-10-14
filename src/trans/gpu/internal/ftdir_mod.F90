@@ -63,8 +63,6 @@ IMPLICIT NONE
 
 INTEGER(KIND=JPIM),INTENT(IN)  :: KFIELDS
 INTEGER(KIND=JPIM)  :: KGL
-!!!REAL(KIND=JPRBT), INTENT(INOUT) :: PREEL(KFIELDS,D%NLENGTF)
-
 INTEGER(KIND=JPIM) :: IGLG,IST,ILEN,IJUMP,JJ,JF,IST1
 INTEGER(KIND=JPIM) :: IOFF,IRLEN,ICLEN, ITYPE
 INTEGER(KIND=JPIM) :: IPLAN_R2C
@@ -72,9 +70,8 @@ INTEGER(KIND=JPIM) :: JMAX
 REAL(KIND=JPRBT)    :: SCAL
 LOGICAL :: LL_ALL=.FALSE. ! T=do kfields ffts in one batch, F=do kfields ffts one at a time
 
-INTEGER(KIND=JPIM) :: IBEG,IEND,IINC,ISCAL
-INTEGER(KIND=JPIM) :: OFFSET_VAR, IUNIT, ISIZE, II, IMAX
-integer :: istat, idev
+INTEGER(KIND=JPIM) :: IBEG,IEND,IINC
+integer :: istat
 real(kind=jprbt), allocatable :: zgtf2(:,:)
 
 !     ------------------------------------------------------------------
@@ -89,32 +86,21 @@ ELSE
   IINC=-1
 ENDIF
 
-OFFSET_VAR=D_NPTRLS(MYSETW)
-
-IMAX = G_NLOEN_MAX + 2 + R_NNOEXTZL
-
-
 allocate(zgtf2(size(zgtf,1),size(zgtf,2)))
-!$ACC DATA &
-!$ACC& PRESENT(ZGTF,D,D_NSTAGTF,D_NPTRLS,G_NMEN,G_NMEN_MAX,G_NLOEN,G_NLOEN_MAX,R_NNOEXTZL)
 
+!$ACC DATA PRESENT(ZGTF,D,D_NSTAGTF,D_NPTRLS,G_NMEN,G_NMEN_MAX,G_NLOEN,G_NLOEN_MAX,R_NNOEXTZL)
 !$ACC DATA CREATE(ZGTF2)
 
-!!$OMP PARALLEL DO SCHEDULE(DYNAMIC,1) PRIVATE(KGL,IOFF,IGLG,IPLAN_R2C,istat)
 DO KGL=IBEG,IEND,IINC
-
-  IOFF=D%NSTAGTF(KGL)+1
-  IGLG = D%NPTRLS(MYSETW)+KGL-1
-  !ILEN = G_NLOEN(IGLG)+R_NNOEXTZL+3-IST
-  !IRLEN=G_NLOEN(IGLG)+R_NNOEXTZL
-  !ICLEN=(IRLEN/2+1)*2
+  IGLG=D_NPTRLS(MYSETW)+KGL-1
+  IOFF=D%NSTAGTF(KGL)
 
   CALL CREATE_PLAN_FFT(IPLAN_R2C,-1,G%NLOEN(IGLG),KFIELDS)
+
   !$ACC host_data use_device(ZGTF,ZGTF2)
-  CALL EXECUTE_PLAN_FFTC(IPLAN_R2C,-1,ZGTF(1,IOFF),ZGTF2(1,IOFF))
+  CALL EXECUTE_PLAN_FFTC(IPLAN_R2C,-1,ZGTF(1,IOFF+1),ZGTF2(1,IOFF+1))
   !$ACC end host_data
 END DO
-!!$OMP END PARALLEL DO
 
 istat = cuda_Synchronize()
 
@@ -123,30 +109,25 @@ zgtf(:,:) = zgtf2(:,:)
 !$acc end kernels
 !$acc end data
 
-!$ACC parallel loop collapse(3) private(JMAX,KGL,IOFF,SCAL,IST) DEFAULT(NONE)
-DO IGLG=IBEG+OFFSET_VAR-1,IEND+OFFSET_VAR-1,IINC
-   DO JJ=1, IMAX
+!$ACC parallel loop collapse(3) private(IGLG,JMAX,IOFF,IST) DEFAULT(NONE)
+DO KGL=IBEG,IEND,IINC
+   DO JJ=1, G_NLOEN_MAX+R_NNOEXTZL+2
       DO JF=1,KFIELDS
+         IGLG=D_NPTRLS(MYSETW)+KGL-1
          JMAX = G_NLOEN(IGLG)
-         IST  = 2*(G_NMEN(IGLG)+1)
-         if (JJ .le. JMAX) then
-           KGL=IGLG-OFFSET_VAR+1
-           IOFF=D_NSTAGTF(KGL)+1
-           SCAL = 1._JPRBT/REAL(G_NLOEN(IGLG),JPRBT)
-           ZGTF(JF,IOFF+JJ-1)= SCAL * ZGTF(JF, IOFF+JJ-1)
+         if (JJ <= JMAX) then
+           IOFF=D_NSTAGTF(KGL)
+           ZGTF(JF,IOFF+JJ)= ZGTF(JF, IOFF+JJ)/JMAX
          end if
 
-         ! case JJ>0
-         IF( JJ .le. (JMAX+R_NNOEXTZL+2-IST)) ZGTF(JF,IST+IOFF+JJ-1) = 0.0_JPRBT
-         ! case JJ=0
-         IF (G_NLOEN(IGLG)==1) ZGTF(JF,IST+IOFF-1) = 0.0_JPRBT
+         IST  = 2*(G_NMEN(IGLG)+1)
+         IF (JJ <= (JMAX+R_NNOEXTZL+2-IST)) ZGTF(JF,IST+IOFF+JJ) = 0.0_JPRBT
+         IF (JMAX==1) ZGTF(JF,IST+IOFF) = 0.0_JPRBT
       ENDDO
    ENDDO
 ENDDO
 
 !$ACC end data
-
-!     ------------------------------------------------------------------
 
 END SUBROUTINE FTDIR
 END MODULE FTDIR_MOD

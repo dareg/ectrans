@@ -10,7 +10,6 @@
 MODULE UVTVD_MOD
 CONTAINS
 SUBROUTINE UVTVD(KFIELD)
-!SUBROUTINE UVTVD(KFIELD,PEPSNM,PU,PV,PVOR,PDIV)
 
 !**** *UVTVD* - Compute vor/div from u and v in spectral space
 
@@ -58,28 +57,18 @@ SUBROUTINE UVTVD(KFIELD)
 !     ------------------------------------------------------------------
 
 USE PARKIND_ECTRANS  ,ONLY : JPIM     ,JPRBT
-
 USE TPM_DIM         ,ONLY : R, R_NTMAX
 USE TPM_FIELDS      ,ONLY : F
 USE TPM_DISTR       ,ONLY : D,D_NUMP,D_MYMS
 USE TPM_FIELDS      ,ONLY : ZOA1,ZOA2,ZEPSNM
-!
 
 IMPLICIT NONE
 
-!     DUMMY INTEGER SCALARS
 INTEGER(KIND=JPIM), INTENT(IN)  :: KFIELD
+
 INTEGER(KIND=JPIM)  :: KM, KMLOC
-
-!REAL(KIND=JPRBT), INTENT(IN)     :: PEPSNM(1:d%nump,0:R%NTMAX+2)
-!REAL(KIND=JPRBT), INTENT(OUT)    :: PVOR(:,:,:),PDIV(:,:,:)
-!REAL(KIND=JPRBT), INTENT(INOUT)  :: PU  (:,:,:),PV  (:,:,:)
-
-!     LOCAL INTEGER SCALARS
 INTEGER(KIND=JPIM) :: II, IN, IR, J, JN, ITMAX
 INTEGER(KIND=JPIM) :: IUS, IUE, IVS, IVE, IVORS, IVORE, IDIVS, IDIVE
-
-!     LOCAL REAL SCALARS
 REAL(KIND=JPRBT) :: ZKM
 REAL(KIND=JPRBT) :: ZN(-1:R%NTMAX+3)
 REAL(KIND=JPRBT), POINTER :: PU(:,:,:),PV(:,:,:),PVOR(:,:,:),PDIV(:,:,:)
@@ -103,24 +92,19 @@ PV => ZOA1(IVS:IVE,:,:)
 PVOR => ZOA2(IVORS:IVORE,:,:)
 PDIV => ZOA2(IDIVS:IDIVE,:,:)
 
-!$ACC DATA&
-!$ACC& CREATE(ZN) &
-!$ACC& COPY(D_MYMS,D_NUMP,R_NTMAX) &
-!$ACC& COPY(F,F%RN,F%NLTN) &
+!$ACC DATA CREATE(ZN) COPY(D_MYMS,D_NUMP,R_NTMAX,F,F%RN,F%NLTN) &
 !$ACC& PRESENT(ZEPSNM,PU,PV,PVOR,PDIV)
 
 !$ACC PARALLEL LOOP DEFAULT(NONE)
 DO J=-1,R_NTMAX+3
-  ZN(j) = F%RN(j)
+  ZN(J) = F%RN(J)
 ENDDO
 !*       1.1      SET N=KM-1 COMPONENT TO 0 FOR U AND V
 
-!$ACC PARALLEL LOOP COLLAPSE(2) PRIVATE(KM,IN) DEFAULT(NONE)
+!$ACC PARALLEL LOOP COLLAPSE(2) PRIVATE(IN) DEFAULT(NONE)
 DO KMLOC=1,D_NUMP
   DO J=1,2*KFIELD
-    KM = D_MYMS(KMLOC)
-    IN = F%NLTN(KM-1)
-!    IN=R_NTMAX+3-KM
+    IN = F%NLTN(D_MYMS(KMLOC)-1)
     PU(J,IN,KMLOC) = 0.0_JPRBT
     PV(J,IN,KMLOC) = 0.0_JPRBT
   ENDDO
@@ -138,34 +122,32 @@ DO KMLOC=1,D_NUMP
       ZKM = REAL(KM,JPRBT)
       IN = R_NTMAX+2-JN
 
-      IF(KM /= 0 .and. JN.GE.KM) THEN
-      PVOR(IR,IN,kmloc) = -ZKM*PV(II,IN,kmloc)-&
-       &ZN(JN)*ZEPSNM(KMLOC,JN+1)*PU(IR,IN-1,kmloc)+&
-       &ZN(JN+1)*ZEPSNM(KMLOC,JN)*PU(IR,IN+1,kmloc)
-      PVOR(II,IN,kmloc) = +ZKM*PV(IR,IN,kmloc)-&
-       &ZN(JN)*ZEPSNM(KMLOC,JN+1)*PU(II,IN-1,kmloc)+&
-       &ZN(JN+1)*ZEPSNM(KMLOC,JN)*PU(II,IN+1,kmloc)
-      PDIV(IR,IN,kmloc) = -ZKM*PU(II,IN,kmloc)+&
-       &ZN(JN)*ZEPSNM(KMLOC,JN+1)*PV(IR,IN-1,kmloc)-&
-       &ZN(JN+1)*ZEPSNM(KMLOC,JN)*PV(IR,IN+1,kmloc)
-      PDIV(II,IN,kmloc) = +ZKM*PU(IR,IN,kmloc)+&
-       &ZN(JN)*ZEPSNM(KMLOC,JN+1)*PV(II,IN-1,kmloc)-&
-       &ZN(JN+1)*ZEPSNM(KMLOC,JN)*PV(II,IN+1,kmloc)
-      ELSE
-        IF(KM == 0) THEN
+      IF (KM == 0) THEN
          PVOR(IR,IN,kmloc) = -&
-         &ZN(JN)*ZEPSNM(KMLOC,JN+1)*PU(IR,IN-1,kmloc)+&
-         &ZN(JN+1)*ZEPSNM(KMLOC,JN)*PU(IR,IN+1,kmloc)
+           &ZN(JN)*ZEPSNM(KMLOC,JN+1)*PU(IR,IN-1,kmloc)+&
+           &ZN(JN+1)*ZEPSNM(KMLOC,JN)*PU(IR,IN+1,kmloc)
          PDIV(IR,IN,kmloc) = &
-         &ZN(JN)*ZEPSNM(KMLOC,JN+1)*PV(IR,IN-1,kmloc)-&
-         &ZN(JN+1)*ZEPSNM(KMLOC,JN)*PV(IR,IN+1,kmloc)
-        ENDIF
+           &ZN(JN)*ZEPSNM(KMLOC,JN+1)*PV(IR,IN-1,kmloc)-&
+           &ZN(JN+1)*ZEPSNM(KMLOC,JN)*PV(IR,IN+1,kmloc)
+      ELSE IF(JN >= KM) THEN
+        PVOR(IR,IN,kmloc) = -ZKM*PV(II,IN,kmloc)-&
+      	&ZN(JN)*ZEPSNM(KMLOC,JN+1)*PU(IR,IN-1,kmloc)+&
+      	&ZN(JN+1)*ZEPSNM(KMLOC,JN)*PU(IR,IN+1,kmloc)
+        PVOR(II,IN,kmloc) = +ZKM*PV(IR,IN,kmloc)-&
+      	&ZN(JN)*ZEPSNM(KMLOC,JN+1)*PU(II,IN-1,kmloc)+&
+      	&ZN(JN+1)*ZEPSNM(KMLOC,JN)*PU(II,IN+1,kmloc)
+        PDIV(IR,IN,kmloc) = -ZKM*PU(II,IN,kmloc)+&
+      	&ZN(JN)*ZEPSNM(KMLOC,JN+1)*PV(IR,IN-1,kmloc)-&
+      	&ZN(JN+1)*ZEPSNM(KMLOC,JN)*PV(IR,IN+1,kmloc)
+        PDIV(II,IN,kmloc) = +ZKM*PU(IR,IN,kmloc)+&
+      	&ZN(JN)*ZEPSNM(KMLOC,JN+1)*PV(II,IN-1,kmloc)-&
+      	&ZN(JN+1)*ZEPSNM(KMLOC,JN)*PV(II,IN+1,kmloc)
       ENDIF
    ENDDO
   ENDDO
 ENDDO
+
 !$acc end data
-!     ------------------------------------------------------------------
 
 END SUBROUTINE UVTVD
 END MODULE UVTVD_MOD
