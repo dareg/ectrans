@@ -489,10 +489,10 @@ program transform_test
 		call specnorm(zdiv(1:nflevl,:),ivset,pnorm=znormdiv1)
 		call specnorm(zt(1:nflevl,:,1),ivset,pnorm=znormt1)
 
-		write(nout,'("SP ZNORM=",4x,F20.15)') znormsp1(1)
-		write(nout,'("DIV ZNORM=",i3,x,F20.15)') (i,znormdiv1(i),i=1,nflevg)
-		write(nout,'("VOR ZNORM=",i3,x,F20.15)') (i,znormvor1(i),i=1,nflevg)
-		write(nout,'("T ZNORM=",2x,i3,x,F20.15)') (i,znormt1(i),i=1,nflevg)
+		write(nout,'("SP ZNORM=",4x,g22.15)') znormsp1(1)
+		write(nout,'("DIV ZNORM=",i3,x,g22.15)') (i,znormdiv1(i),i=1,nflevg)
+		write(nout,'("VOR ZNORM=",i3,x,g22.15)') (i,znormvor1(i),i=1,nflevg)
+		write(nout,'("T ZNORM=",2x,i3,x,g22.15)') (i,znormt1(i),i=1,nflevg)
 	end if
 
 	ztinit = (timef()-ztinit)/1000
@@ -546,10 +546,10 @@ program transform_test
 		write(nout,'(". time at step ",I6,":", F8.4)') jstep,ztstep(jstep)
 
 		if (nprintnorms > 0) then
-			write(nout,"('GP P:',3(x,f22.15))") mnx(zgmvs(:,1,:))
-			write(nout,"('GP U:',3(x,f22.15))") mnx(zwinds(:,nflevg,2,:))
-			write(nout,"('GP V:',3(x,f22.15))") mnx(zwinds(:,nflevg,3,:))
-			write(nout,"('GP T:',3(x,f22.15))") mnx(zgmv(:,nflevg,5,:))
+			write(nout,"('GP P:',3(x,g22.15))") mnx(zgmvs(:,1,:))
+			write(nout,"('GP U:',3(x,g22.15))") mnx(zwinds(:,nflevg,2,:))
+			write(nout,"('GP V:',3(x,g22.15))") mnx(zwinds(:,nflevg,3,:))
+			write(nout,"('GP T:',3(x,g22.15))") mnx(zgmv(:,nflevg,5,:))
 
 			call specnorm(zsp,ivsetsc,pnorm=znormsp)
 			call specnorm(zvor(1:nflevl,:),ivset,pnorm=znormvor)
@@ -576,10 +576,10 @@ program transform_test
 		call specnorm(zdiv(1:nflevl,:),ivset,pnorm=znormdiv)
 		call specnorm(zt(1:nflevl,:,1),ivset,pnorm=znormt)
 
-		write(nout,'("SP ZNORM=",4x,F20.15)') znormsp(1)
-		write(nout,'("DIV ZNORM=",i3,x,F20.15)') (i,znormdiv(i),i=1,nflevg)
-		write(nout,'("VOR ZNORM=",i3,x,F20.15)') (i,znormvor(i),i=1,nflevg)
-		write(nout,'("T ZNORM=",2x,i3,x,F20.15)') (i,znormt(i),i=1,nflevg)
+		write(nout,'("SP ZNORM=",4x,g22.15)') znormsp(1)
+		write(nout,'("DIV ZNORM=",i3,x,g22.15)') (i,znormdiv(i),i=1,nflevg)
+		write(nout,'("VOR ZNORM=",i3,x,g22.15)') (i,znormvor(i),i=1,nflevg)
+		write(nout,'("T ZNORM=",2x,i3,x,g22.15)') (i,znormt(i),i=1,nflevg)
 
 		if (myproc == 1) then
 			zmaxerr(1) = sperror(1,znormsp,znormsp1)
@@ -867,6 +867,8 @@ contains
 		if (linit) then
 			do jk=1,nump
 				im = myms(jk)
+				if (im /= 0) cycle
+
 				ioff = nasm0(im)
 				if (ioff+2*(nsmax-im) > size(zsp,2)) then
 					write(0,*) "--> proc/jk/im/ioff/nspec2:",myproc,jk,im,ioff,size(zsp,2)
@@ -881,6 +883,8 @@ contains
 
 				do jk=1,nump
 					im = myms(jk)
+					if (im /= 0) cycle
+
 					ioff = nasm0(im)
 					if (ioff+2*(nsmax-im) > size(sp3d,2)) cycle
 

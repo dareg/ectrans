@@ -61,7 +61,7 @@ IMPLICIT NONE
 INTEGER(KIND=JPIM),INTENT(IN) :: KFIELDS
 REAL(KIND=JPRBT), INTENT(INOUT)  :: PREEL(:,:)
 
-INTEGER(KIND=JPIM) :: KGL,IGLG,IOFF,IST,ILEN,JJ,JF,IST1
+INTEGER(KIND=JPIM) :: KGL,IGLG,IOFF,IST,ILEN,JJ,JF
 INTEGER(KIND=JPIM) :: IPLAN_C2R
 INTEGER(KIND=JPIM) :: IBEG,IEND,IINC
 integer :: istat
@@ -79,24 +79,26 @@ ENDIF
 
 !$ACC DATA PRESENT(PREEL)
 
-!$ACC PARALLEL LOOP private(IGLG,IOFF,IST1,ILEN,JJ,JF) DEFAULT(NONE)
+!$ACC PARALLEL LOOP private(IGLG,IOFF,IST,ILEN,JJ,JF) DEFAULT(NONE)
 DO KGL=IBEG,IEND,IINC
   IGLG = D%NPTRLS(MYSETW)+KGL-1
   IOFF = D%NSTAGTF(KGL)
   ILEN = G%NLOEN(IGLG)+R%NNOEXTZL+2
-  IST1 = 2*(G%NMEN(IGLG)+1)+1
-  IF (G%NLOEN(IGLG)==1) IST1=IST1-1
+  IST = 2*(G%NMEN(IGLG)+1)+1
+  IF (G%NLOEN(IGLG)==1) IST=IST-1
 
   !$ACC loop collapse(2)
-  DO JJ=IST1,ILEN
+  DO JJ=IST,ILEN
      DO JF=1,KFIELDS
         PREEL(JF,IOFF+JJ) = 0.0_JPRBT
      ENDDO
   ENDDO
 END DO
+
 !$ACC end data
 
 allocate(preel2(size(preel,1),size(preel,2)))
+
 !$acc data create(preel2) present(preel)
 
 DO KGL=IBEG,IEND,IINC
@@ -115,6 +117,7 @@ istat = cuda_Synchronize()
 !$acc kernels
 preel(:,:) = preel2(:,:)
 !$acc end kernels
+
 !$acc end data
 
 END SUBROUTINE FTINV

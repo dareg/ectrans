@@ -222,6 +222,7 @@ MODULE LTINV_MOD
      ISU = ISL+2*KF_SCALARS-1
      IDL = 2*(4*KF_UV+KF_SCALARS)+1
      IDU = IDL+2*KF_SCDERS-1
+     write(0,*) "ltinv ders (spnsde) - inds:",isl,isu,idl,idu
      CALL SPNSDE(KF_SCALARS,ZEPSNM,ZIA(ISL:ISU,:,:),ZIA(IDL:IDU,:,:))
   ENDIF
   
