@@ -75,10 +75,10 @@ ecbuild_add_option( FEATURE GPU
                     DESCRIPTION "Compile GPU version of ectrans" )
 ##                    CONDITION HAVE_DOUBLE_PRECISION )
 set( OpenACC_Fortran_FLAGS "-acc" )
-set( OpenACC_Fortran_FLAGS "${OpenACC_Fortran_FLAGS} -ta=tesla:lineinfo,deepcopy,fastmath" )
+set( OpenACC_Fortran_FLAGS "${OpenACC_Fortran_FLAGS} -gpu=lineinfo,deepcopy,fastmath" )
 set( OpenACC_Fortran_FLAGS "${OpenACC_Fortran_FLAGS} -Mcuda" )
 # For debugging accelerator compilation
-# set( OpenACC_Fortran_FLAGS "${OpenACC_Fortran_FLAGS} -Minfo=accel" )
+#set( OpenACC_Fortran_FLAGS "${OpenACC_Fortran_FLAGS} -Minfo=accel" )
 
 
 ectrans_find_lapack()
