@@ -416,18 +416,18 @@ ENDIF
 !     Setup resolution dependent structures
 !     -------------------------------------
 
-! Setup distribution independent dimensions
+write(nout,*) "Setup distribution independent dimensions"
 CALL SETUP_DIMS
 
-! First part of setup of distributed environment
+write(nout,*) "First part of setup of distributed environment"
 CALL SUMP_TRANS_PRELEG
 
 IF( .NOT.LLSPSETUPONLY ) THEN
 
-! Compute Legendre polonomial and Gaussian Latitudes and Weights
+  write(nout,*) "Compute Legendre polonomial and Gaussian Latitudes and Weights"
   CALL SULEG
 
-! Second part of setup of distributed environment
+  write(nout,*) "Second part of setup of distributed environment"
   CALL SUMP_TRANS
   CALL GSTATS(1802,0)
 
@@ -582,7 +582,7 @@ DZCST(:) = 0
 IZCST(:) = 0
 !DZCAT=>DZCST(:,1:TDZAA,:)
 
-write(nout,*)'setup_trans: sizes1 NUMP=',D%NUMP
+write(nout,*)'sizes NUMP=',D%NUMP
 write(nout,*)'ZAS:',size(ZAS)
 write(nout,*)'IZBS :',size(IZBS )
 write(nout,*)'IZCST:',size(IZCST)
@@ -590,6 +590,8 @@ write(nout,*)'DZBST:',size(DZBST)
 write(nout,*)'DZCST:',size(DZCST)
 write(nout,*)'DZCAT:',size(DZCAT)
 !!!$ACC ENTER DATA CREATE(ZAA,ZAS,IZBA,IZBS,IZCAT,IZCST,DZBAT,DZBST,DZCAT,DZCST) 
+
+write(nout,*) "Copy arrays and structures to GPU"
 !$ACC ENTER DATA COPYIN(ZAA,ZAS,IZBS,IZCST,DZBST,DZCST,DZCAT) &
 !$ACC& COPYIN(F,F%RN,F%RLAPIN,S,S%FA,S%ITHRESHOLD,S%LUSEFLT,D,D%NUMP,D%MYMS,R,R%NDGNH,R%NSMAX,G,G%NDGLU) &
 !$ACC& copyin(D%NPNTGTB0,D%NPNTGTB1,D%NSTAGT0B,D%NSTAGT1B,D%NSTAGTF,G%NMEN,D%NPROCM,D%NPTRLS,G,G%NLOEN,D%MSTABF)
@@ -663,7 +665,7 @@ ALLOCATE(FOUBUF(MAX(1,D%NLENGT0B*2*IF_FOUBUF)))
 ! memory save
 
 ALLOCATE(ZGTF(2*IF_FS,D%NLENGTF))
-write(nout,*)'ZGTF :',size(ZGTF)
+write(nout,*) 'Create ZGTF and Leg. arrays on GPU :',size(ZGTF)
 !$ACC enter data create(ZGTF)
 
 ALLOCATE(ZIA(IF_FS_INV0,R%NLEI1,D%NUMP))
@@ -847,7 +849,7 @@ END DO
 !$ACC&                  D_NPNTGTB0,D_NPROCM,D_NPTRLS,G_NDGLU,G_NMEN,G_NMEN_MAX,G_NLOEN,&
 !$ACC&                  G_NLOEN_MAX,F_RW)
 
-WRITE(NOUT,*) '===GPU arrays successfully allocated'
+WRITE(NOUT,*) 'GPU copy arrays (r, d, g) successfully allocated'
 !$ACC wait
 
 ! free memory

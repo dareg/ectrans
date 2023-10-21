@@ -31,14 +31,15 @@ program transform_test
 	real(kind=jprd) :: ztinit,ztloop,timef,ztstepmax,ztstepmin,ztstepavg,&
 		ztstepmax1,ztstepmin1,ztstepavg1,ztstepmax2,ztstepmin2,ztstepavg2,&
 		zaveave(0:jpmaxstat)
-	real(kind=jprb) :: zra=6371229
+	real(kind=jprb),parameter :: zra=6371229
 	real(kind=jprd),allocatable :: ztstep(:),ztstep1(:),ztstep2(:)
 	real(kind=jprb),allocatable :: zfpdat(:),znormsp(:),znormsp1(:),znormdiv(:),&
 		znormdiv1(:),znormvor(:),znormvor1(:),znormt(:),znormt1(:),znorm(:)
-	real(kind=jprb),allocatable,target :: zgmv(:,:,:,:),zgmvs(:,:,:),zwind(:,:,:,:),sp3d(:,:,:)
+	real(kind=jprb),allocatable,target :: zgmv(:,:,:,:),zgmvs(:,:,:),sp3d(:,:,:)
 	real(kind=jprb),allocatable :: zspvorg(:,:),zspdivg(:,:),zspspg(:,:),zsptg(:,:,:),&
 		zsp(:,:)
-	real(kind=jprb),pointer :: zvor(:,:),zdiv(:,:),zt(:,:,:),zuv(:,:,:,:),zgpt(:,:,:,:)
+	real(kind=jprb),pointer :: zvor(:,:),zdiv(:,:),zt(:,:,:),zuv(:,:,:,:),zgpt(:,:,:,:),&
+      zwind(:,:,:,:)
 
 	namelist/namrgri/ndgl,nlin,nq,nsmax,rgri
 	!namelist/namtrans/nprintnorms,niter,nproma,npromatr,nspecresmin,mbx_size
@@ -55,6 +56,7 @@ program transform_test
 #include "dist_spec.h"
 #include "gath_grid.h"
 #include "trans_inq.h"
+#include "gpnorm_trans.h"
 #include "specnorm.h"
 #include "abor1.intfb.h"
 #include "gstats_setup.intfb.h"
@@ -471,11 +473,18 @@ program transform_test
 	end if
 
 	write(nout,*) "allocate local GMV data"
-	ndimgmv = 9
 	ndimgmvs = 3
-	allocate(zwind(nproma,nflevg,4,ngpblks))
-	allocate(zgmv(nproma,nflevg,ndimgmv,ngpblks))
 	allocate(zgmvs(nproma,ndimgmvs,ngpblks))
+   if (.false.) then
+	   ndimgmv = 5
+	   allocate(zgmv(nproma,nflevg,ndimgmv,ngpblks))
+	   allocate(zwind(nproma,nflevg,4,ngpblks))
+   else
+	   ndimgmv = 9
+	   allocate(zgmv(nproma,nflevg,ndimgmv,ngpblks))
+      zwind => zgmv(:,:,5:9,:)
+   end if
+
 	zwind(:,:,:,:) = -1
 	zgmv(:,:,:,:) = -2
 	zgmvs(:,:,:) = -3
@@ -487,7 +496,7 @@ program transform_test
 	else
 		zuv => zwind(:,:,1:2,:)
 	end if
-	zgpt => zgmv(:,:,5:5,:)
+	zgpt => zgmv(:,:,1:1,:)
 
 	allocate(znormsp(1),znormsp1(1))
 	allocate(znormvor(nflevg),znormvor1(nflevg))
@@ -537,58 +546,32 @@ program transform_test
 		call inv_trans(pspvor=zvor,pspdiv=zdiv,pspsc2=zsp,pspsc3a=zt,ldscders=.true.,&
 			ldvorgp=lvorgp,lddivgp=ldivgp,lduvder=.false.,kresol=1,kproma=nproma,&
 			kvsetuv=ivset,kvsetsc2=ivsetsc,kvsetsc3a=ivset,pgpuv=zwind,&
-			pgp2=zgmvs(:,1:3,:),pgp3a=zgmv(:,:,5:7,:))
+			pgp2=zgmvs(:,1:3,:),pgp3a=zgmv(:,:,1:3,:))
 		ztstep1(jstep) = (timef()-ztstep1(jstep))/1000
 
 		if (nprintnorms > 0) then
-			write(nout,"('GMVS P:',3(x,g22.15))") mnx(zgmvs(:,1,:))
-			write(nout,"('GMVS Pl:',3(x,g22.15))") mnx(zgmvs(:,2,:))
-			write(nout,"('GMVS Pm:',3(x,g22.15))") mnx(zgmvs(:,3,:))
-			if (lvorgp) write(nout,"('GPUV VOR?:',3(x,g22.15))") mnx(zwind(:,nflevg,1,:))
-			if (lvorgp.and.ldivgp) then
-            write(nout,"('GPUV DIV?:',3(x,g22.15))") mnx(zwind(:,nflevg,2,:))
-			else if (ldivgp) then
-            write(nout,"('GPUV DIV?:',3(x,g22.15))") mnx(zwind(:,nflevg,1,:))
-			end if
-			write(nout,"('GPUV U *:',3(x,g22.15))") mnx(zuv(:,nflevg,1,:))
-			write(nout,"('GPUV V *:',3(x,g22.15))") mnx(zuv(:,nflevg,2,:))
-			write(nout,"('GMV T:',3(x,g22.15))") mnx(zgpt(:,nflevg,1,:))
-			write(nout,"('GMV Tl?:',3(x,g22.15))") mnx(zgmv(:,nflevg,6,:))
-			write(nout,"('GMV Tm?:',3(x,g22.15))") mnx(zgmv(:,nflevg,7,:))
+         call gpnorms(zgmvs,zgmv,zwind,zuv)
 		end if
 
 		if (jstep == 1) then
-			write(nout,*) "reset GMV to constant values"
+			write(nout,*) "--> step 1, reset GMV to constant values"
 			zgmvs(:,1,:) = 11+myproc/10.
 			zgmvs(:,2,:) = .5+myproc/100.
-			zgmvs(:,3,:) = .25+myproc/100.
+			zgmvs(:,3,:) = .25+myproc/200.
 			do jl=1,nflevg
 				zuv(:,jl,1,:) = myproc+min(jl,nflevg-2)
 				zuv(:,jl,2,:) = (myproc+mod(jl,3))/2
 				zgpt(:,jl,1,:) = 240+2*myproc+10*abs(jl-(nflevg+1)/2)
 			end do
 
-			write(nout,"('GMVS P *:',3(x,g22.15))") mnx(zgmvs(:,1,:))
-			write(nout,"('GMVS Pl:',3(x,g22.15))") mnx(zgmvs(:,2,:))
-			write(nout,"('GMVS Pm:',3(x,g22.15))") mnx(zgmvs(:,3,:))
-			if (lvorgp) write(nout,"('GPUV VOR?:',3(x,g22.15))") mnx(zwind(:,nflevg,1,:))
-			if (lvorgp.and.ldivgp) then
-            write(nout,"('GPUV DIV?:',3(x,g22.15))") mnx(zwind(:,nflevg,2,:))
-			else if (ldivgp) then
-            write(nout,"('GPUV DIV?:',3(x,g22.15))") mnx(zwind(:,nflevg,1,:))
-			end if
-			write(nout,"('GPUV U *:',3(x,g22.15))") mnx(zuv(:,nflevg,1,:))
-			write(nout,"('GPUV V *:',3(x,g22.15))") mnx(zuv(:,nflevg,2,:))
-			write(nout,"('GMV T *:',3(x,g22.15))") mnx(zgpt(:,nflevg,1,:))
-			write(nout,"('GMV Tl?:',3(x,g22.15))") mnx(zgmv(:,nflevg,6,:))
-			write(nout,"('GMV Tm?:',3(x,g22.15))") mnx(zgmv(:,nflevg,7,:))
+         call gpnorms(zgmvs,zgmv,zwind,zuv)
 		end if
 
 		if (.false.) then
 		call dump_gp_field(noutdump,jstep,myproc,nproma,ngpblks,"P",zgmvs(:,1,:))
 		call dump_gp_field(noutdump,jstep,myproc,nproma,ngpblks,"U",zuv(:,nflevg,1,:))
 		call dump_gp_field(noutdump,jstep,myproc,nproma,ngpblks,"V",zuv(:,nflevg,2,:))
-		call dump_gp_field(noutdump,jstep,myproc,nproma,ngpblks,"T",zgmv(:,nflevg,5,:))
+		call dump_gp_field(noutdump,jstep,myproc,nproma,ngpblks,"T",zgmv(:,nflevg,1,:))
 		end if
 
 		ztstep2(jstep) = timef()
@@ -694,7 +677,8 @@ program transform_test
 
 	if (myproc /= 1) close(nout)
 
-	deallocate(zwind,zgmv,zgmvs)
+	deallocate(zgmv,zgmvs)
+   if (ndimgmv == 5) deallocate(zwind)
 
 	call mpl_barrier()
 	call mpl_end()
@@ -937,7 +921,8 @@ contains
 					cycle
 				end if
 
-				zsp(1,ioff:ioff+2*(nsmax-im)) = 1/8.
+				!zsp(1,ioff:ioff+2*(nsmax-im)) = 1/8.
+				zsp(1,ioff:ioff+2*(nsmax-im)/5) = 1/16.
 			end do
 
 			do jf=1,nfield
@@ -951,7 +936,7 @@ contains
 					if (ioff+2*(nsmax-im) > size(sp3d,2)) cycle
 
 					! +2*(jf-1): some offset for fields
-					sp3d(:,ioff+2*(jf-1):ioff+2*(nsmax-im),jf) = jf/8.
+					sp3d(:,ioff+2*(jf-1):ioff+2*(nsmax-im),jf) = jf/64.
 				end do
 			end do
 		end if
@@ -1042,5 +1027,49 @@ contains
 			call mpl_send(istack,nprcids(1),myproc,cdstring='transform_test:')
 		end if
 	end subroutine
+
+	subroutine gpnorm(zgp,nf,pm,pn,px)
+		integer(jpim),intent(in) :: nf
+		real(jprb),intent(in) :: zgp(:,:,:,:)
+		real(jprb),intent(out) :: pm(nf),pn(nf),px(nf)
+
+      integer(jpim) :: i
+		real(jprb) :: zm(nflevg),zn(nflevg),zx(nflevg)
+
+      do i=1,nf
+			call gpnorm_trans(zgp(:,:,i,:),nflevg,nproma,zm,zn,zx,.false.,kresol=1)
+			pm(i) = sum(zm)/nflevg
+			pn(i) = minval(zn)
+			px(i) = maxval(zx)
+		end do
+	end subroutine
+
+   subroutine gpnorms(zgmvs,zgmv,zwind,zuv)
+      real(jprb),intent(in) :: zgmvs(:,:,:),zgmv(:,:,:,:),zwind(:,:,:,:),zuv(:,:,:,:)
+
+      real(jprb) :: zm(10),zn(10),zx(10)
+
+		call gpnorm_trans(zgmvs,3,nproma,zm,zn,zx,.false.,kresol=1)
+		write(nout,"('GMVS P *:',3(x,g22.15))") zn(1),zm(1),zx(1)
+		write(nout,"('GMVS Pl:',3(x,g22.15))") zn(2),zm(2),zx(2)
+		write(nout,"('GMVS Pm:',3(x,g22.15))") zn(3),zm(3),zx(3)
+
+		call gpnorm(zwind,2,zm,zn,zx)
+		if (lvorgp) write(nout,"('GPUV VOR?:',3(x,g22.15))") zn(1),zm(1),zx(1)
+		if (lvorgp.and.ldivgp) then
+         write(nout,"('GPUV DIV?:',3(x,g22.15))") zn(2),zm(2),zx(2)
+		else if (ldivgp) then
+         write(nout,"('GPUV DIV?:',3(x,g22.15))") zn(1),zm(1),zx(1)
+		end if
+
+		call gpnorm(zuv,2,zm,zn,zx)
+		write(nout,"('GPUV U *:',3(x,g22.15))") zn(1),zm(1),zx(1)
+		write(nout,"('GPUV V *:',3(x,g22.15))") zn(2),zm(2),zx(2)
+
+		call gpnorm(zgmv,5,zm,zn,zx)
+		write(nout,"('GMV T:',3(x,g22.15))") zn(1),zm(1),zx(1)
+		write(nout,"('GMV Tl?:',3(x,g22.15))") zn(2),zm(2),zx(2)
+		write(nout,"('GMV Tm?:',3(x,g22.15))") zn(3),zm(3),zx(3)
+   end subroutine
 end program
 
