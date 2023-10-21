@@ -482,7 +482,7 @@ program transform_test
    else
 	   ndimgmv = 9
 	   allocate(zgmv(nproma,nflevg,ndimgmv,ngpblks))
-      zwind => zgmv(:,:,5:9,:)
+      zwind => zgmv(:,:,1:4,:)
    end if
 
 	zwind(:,:,:,:) = -1
@@ -496,7 +496,7 @@ program transform_test
 	else
 		zuv => zwind(:,:,1:2,:)
 	end if
-	zgpt => zgmv(:,:,1:1,:)
+	zgpt => zgmv(:,:,5:7,:)
 
 	allocate(znormsp(1),znormsp1(1))
 	allocate(znormvor(nflevg),znormvor1(nflevg))
@@ -546,11 +546,11 @@ program transform_test
 		call inv_trans(pspvor=zvor,pspdiv=zdiv,pspsc2=zsp,pspsc3a=zt,ldscders=.true.,&
 			ldvorgp=lvorgp,lddivgp=ldivgp,lduvder=.false.,kresol=1,kproma=nproma,&
 			kvsetuv=ivset,kvsetsc2=ivsetsc,kvsetsc3a=ivset,pgpuv=zwind,&
-			pgp2=zgmvs(:,1:3,:),pgp3a=zgmv(:,:,1:3,:))
+			pgp2=zgmvs(:,1:3,:),pgp3a=zgpt)
 		ztstep1(jstep) = (timef()-ztstep1(jstep))/1000
 
 		if (nprintnorms > 0) then
-         call gpnorms(zgmvs,zgmv,zwind,zuv)
+         call gpnorms(zgmvs,zgpt,zwind,zuv)
 		end if
 
 		if (jstep == 1) then
@@ -564,7 +564,7 @@ program transform_test
 				zgpt(:,jl,1,:) = 240+2*myproc+10*abs(jl-(nflevg+1)/2)
 			end do
 
-         call gpnorms(zgmvs,zgmv,zwind,zuv)
+         call gpnorms(zgmvs,zgpt,zwind,zuv)
 		end if
 
 		if (.false.) then
@@ -577,7 +577,7 @@ program transform_test
 		ztstep2(jstep) = timef()
 		call dir_trans(pspvor=zvor,pspdiv=zdiv,pspsc2=zsp,pspsc3a=zt,kresol=1,&
 			kproma=nproma,kvsetuv=ivset,kvsetsc2=ivsetsc,kvsetsc3a=ivset,&
-			pgpuv=zuv,pgp2=zgmvs(:,1:1,:),pgp3a=zgpt)
+			pgpuv=zuv,pgp2=zgmvs(:,1:1,:),pgp3a=zgpt(:,:,1:1,:))
 		ztstep2(jstep) = (timef()-ztstep2(jstep))/1000
 
 		ztstep(jstep) = (timef()-ztstep(jstep))/1000
@@ -1044,8 +1044,8 @@ contains
 		end do
 	end subroutine
 
-   subroutine gpnorms(zgmvs,zgmv,zwind,zuv)
-      real(jprb),intent(in) :: zgmvs(:,:,:),zgmv(:,:,:,:),zwind(:,:,:,:),zuv(:,:,:,:)
+   subroutine gpnorms(zgmvs,zgpt,zwind,zuv)
+      real(jprb),intent(in) :: zgmvs(:,:,:),zgpt(:,:,:,:),zwind(:,:,:,:),zuv(:,:,:,:)
 
       real(jprb) :: zm(10),zn(10),zx(10)
 
@@ -1066,7 +1066,7 @@ contains
 		write(nout,"('GPUV U *:',3(x,g22.15))") zn(1),zm(1),zx(1)
 		write(nout,"('GPUV V *:',3(x,g22.15))") zn(2),zm(2),zx(2)
 
-		call gpnorm(zgmv,5,zm,zn,zx)
+		call gpnorm(zgpt,5,zm,zn,zx)
 		write(nout,"('GMV T:',3(x,g22.15))") zn(1),zm(1),zx(1)
 		write(nout,"('GMV Tl?:',3(x,g22.15))") zn(2),zm(2),zx(2)
 		write(nout,"('GMV Tm?:',3(x,g22.15))") zn(3),zm(3),zx(3)
