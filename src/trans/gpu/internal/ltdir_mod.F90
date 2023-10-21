@@ -1,88 +1,27 @@
-! (C) Copyright 1987- ECMWF.
-! 
-! This software is licensed under the terms of the Apache Licence Version 2.0
-! which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
-! In applying this licence, ECMWF does not waive the privileges and immunities
-! granted to it by virtue of its status as an intergovernmental organisation
-! nor does it submit to any jurisdiction.
-!
+!**** *LTDIR* - Control of Direct Legendre transform step
+
+!     Purpose.
+!     --------
+!        Tranform from Fourier space to spectral space, compute
+!        vorticity and divergence.
 
 MODULE LTDIR_MOD
+  USE PARKIND1  ,ONLY : JPIM,JPRB
+  USE PARKIND_ECTRANS,ONLY : JPRBT
+  USE YOMHOOK,ONLY : LHOOK,DR_HOOK,JPHOOK
+  use tpm_gen,only: nout
+  USE TPM_DIM,ONLY : R,R_NSMAX,R_NTMAX,R_NDGNH, R_NDGL
+  USE TPM_DISTR,ONLY : D,D_NUMP,D_MYMS,D_NSTAGT1B,D_NPROCL,D_NPNTGTB1,MYPROC
+  USE TPM_GEOMETRY,ONLY : G,G_NDGLU
+  USE TPM_FIELDS,ONLY : F,ZAIA,ZOA1,ZOA2,ZEPSNM
+  USE TPM_TRANS,ONLY : FOUBUF,NF_SC2, NF_SC3A, NF_SC3B
+  USE LEDIR_MOD,ONLY : LEDIR1,LEDIR2
+
+  IMPLICIT NONE
 CONTAINS
 SUBROUTINE LTDIR(KF_FS,KF_UV,KF_SCALARS,KLED2,PSPVOR,PSPDIV,PSPSCALAR,&
  & PSPSC3A,PSPSC3B,PSPSC2,KFLDPTRUV,KFLDPTRSC)
-  USE PARKIND1  ,ONLY : JPIM     ,JPRB
-  USE YOMHOOK   ,ONLY : LHOOK,   DR_HOOK, JPHOOK
-  use tpm_gen,only: nout,nprintlev
-  USE TPM_DIM     ,ONLY : R
-  USE TPM_DISTR   ,ONLY : D
-  USE TPM_GEOMETRY
-  USE PREPSNM_MOD ,ONLY : PREPSNM
-  USE PRFI2B_MOD  ,ONLY : PRFI2B
-  USE LDFOU2_MOD  ,ONLY : LDFOU2
-  USE LEDIR_MOD   ,ONLY : LEDIR
-  USE UVTVD_MOD
-  USE UPDSP_MOD   ,ONLY : UPDSP
-  USE TPM_FIELDS      ,ONLY : ZAIA,ZOA1,ZOA2,ZEPSNM
-
-  !**** *LTDIR* - Control of Direct Legendre transform step
-
-  !     Purpose.
-  !     --------
-  !        Tranform from Fourier space to spectral space, compute
-  !        vorticity and divergence.
-
-  !**   Interface.
-  !     ----------
-  !        *CALL* *LTDIR(...)*
-
-  !        Explicit arguments :
-  !        --------------------  KM     - zonal wavenumber
-  !                              KMLOC  - local zonal wavenumber
-
-  !        Implicit arguments :  None
-  !        --------------------
-
-  !     Method.
-  !     -------
-
-  !     Externals.
-  !     ----------
-  !         PREPSNM - prepare REPSNM for wavenumber KM
-  !         PRFI2   - prepares the Fourier work arrays for model variables.
-  !         LDFOU2  - computations in Fourier space
-  !         LEDIR   - direct Legendre transform
-  !         UVTVD   -
-  !         UPDSP   - updating of spectral arrays (fields)
-
-  !     Reference.
-  !     ----------
-  !        ECMWF Research Department documentation of the IFS
-
-  !     Author.
-  !     -------
-  !        Mats Hamrud and Philippe Courtier  *ECMWF*
-
-  !     Modifications.
-  !     --------------
-  !        Original : 87-11-24
-  !        Modified : 91-07-01 Philippe Courtier/Mats Hamrud - Rewrite
-  !                            for uv formulation
-  !        Modified 93-03-19 D. Giard - CDCONF='T' for tendencies
-  !        Modified 93-11-18 M. Hamrud - use only one Fourier buffer
-  !        Modified 94-04-06 R. El khatib Full-POS implementation
-  !        M.Hamrud  : 94-11-01 New conf 'G' - vor,div->vor,div
-  !                             instead of u,v->vor,div
-  !        MPP Group : 95-10-01 Support for Distributed Memory version
-  !        K. YESSAD (AUGUST 1996):
-  !               - Legendre transforms for transmission coefficients.
-  !        Modified : 04/06/99 D.Salmond : change order of AIA and SIA
-  !        R. El Khatib 12-Jul-2012 LDSPC2 replaced by UVTVD
-  !     ------------------------------------------------------------------
-
-  IMPLICIT NONE
-
-  INTEGER(KIND=JPIM),INTENT(IN)   :: KF_FS,KF_UV,KF_SCALARS,KLED2
+  INTEGER(KIND=JPIM),INTENT(IN) :: KF_FS,KF_UV,KF_SCALARS,KLED2
   REAL(KIND=JPRB)  ,OPTIONAL, INTENT(OUT) :: PSPVOR(:,:)
   REAL(KIND=JPRB)  ,OPTIONAL, INTENT(OUT) :: PSPDIV(:,:)
   REAL(KIND=JPRB)  ,OPTIONAL, INTENT(OUT) :: PSPSCALAR(:,:)
@@ -92,48 +31,255 @@ SUBROUTINE LTDIR(KF_FS,KF_UV,KF_SCALARS,KLED2,PSPVOR,PSPDIV,PSPSCALAR,&
   INTEGER(KIND=JPIM),OPTIONAL,INTENT(IN)  :: KFLDPTRUV(:)
   INTEGER(KIND=JPIM),OPTIONAL,INTENT(IN)  :: KFLDPTRSC(:)
 
-  INTEGER(KIND=JPIM) :: IUS, IUE, IVS, IVE, IVORS, IVORE, IDIVS, IDIVE
+  INTEGER(KIND=JPIM) :: IUS,IUE,IVS,IVE,IVORS,IVORE,IDIVS,IDIVE,IST,IEND,J3
   REAL(KIND=JPHOOK) :: ZHOOK_HANDLE
+
+  IF (PRESENT(KFLDPTRUV)) stop 'Error: code path not (yet) supported in GPU version'
+  IF (PRESENT(KFLDPTRSC)) stop 'Error: code path not (yet) supported in GPU version'
 
   IF (LHOOK) CALL DR_HOOK('LTDIR_MOD',0,ZHOOK_HANDLE)
 
   !*       1.    PREPARE LEGENDRE POLONOMIALS AND EPSNM
   !              --------------------------------------
 
+  !$acc data copyin(kf_uv)
+
   write(nout,*) "anti-sym. ledir - nfs/nuv/nle:",kf_fs,kf_uv,kled2
-  CALL PRFI2B(KF_FS,ZAIA,-1)
-  CALL LDFOU2(KF_UV,ZAIA)
-  CALL LEDIR(KF_FS,KLED2,ZAIA,ZOA1,-1)
+  CALL PRFI2B(KF_FS,KF_UV,ZAIA,-1)
+  CALL LEDIR2(KF_FS,KLED2,ZAIA,ZOA1)
 
   write(nout,*) "sym. ledir (idem)"
-  CALL PRFI2B(KF_FS,ZAIA,1)
-  CALL LDFOU2(KF_UV,ZAIA)
-  CALL LEDIR(KF_FS,KLED2,ZAIA,ZOA1,1)
+  CALL PRFI2B(KF_FS,KF_UV,ZAIA,1)
+  CALL LEDIR1(KF_FS,KLED2,ZAIA,ZOA1)
 
-  !*       5.    COMPUTE VORTICITY AND DIVERGENCE.
-  !              ---------------------------------
+  !$acc end data
+
+  IST = 1
 
   IF (KF_UV > 0) THEN
-     write(nout,*) "call uvtvd" ,kf_uv
-     IUS = 1
-     IUE = 2*KF_UV
-     IVS = 2*KF_UV+1
-     IVE = 4*KF_UV
-     IVORS = 1
-     IVORE = 2*KF_UV
-     IDIVS = 2*KF_UV+1
-     IDIVE = 4*KF_UV
+     write(nout,*) "Compute vor/div",kf_uv
      CALL UVTVD(KF_UV)
+
+     write(nout,*) "update spec. (updspb)",KF_UV
+
+    !$ACC DATA PRESENT(PSPVOR,PSPDIV) COPYOUT(PSPVOR,PSPDIV)
+
+	 IVORS = 1
+	 IVORE = 2*KF_UV
+	 IDIVS = 2*KF_UV+1
+	 IDIVE = 4*KF_UV
+	 IST = IST+4*KF_UV
+
+	 CALL UPDSPB(KF_UV,ZOA2(IVORS:IVORE,:,:),PSPVOR)
+	 CALL UPDSPB(KF_UV,ZOA2(IDIVS:IDIVE,:,:),PSPDIV)
+
+    !$ACC END DATA
   ENDIF
 
-  !*       6.    UPDATE SPECTRAL ARRAYS.
-  !              -----------------------
+  IF (KF_SCALARS > 0) THEN
+	 IF (PRESENT(PSPSCALAR)) THEN
+      !$ACC DATA PRESENT(PSPSCALAR) COPYOUT(PSPSCALAR)
 
-  ! this is on the host, so need to cp from device, Nils
-  if (nprintlev > 0) write(nout,*) "update spec. (updsp)",KF_UV,KF_SCALARS
-  CALL UPDSP(KF_UV,KF_SCALARS,ZOA1,ZOA2,PSPVOR,PSPDIV,PSPSCALAR,&
-   & PSPSC3A,PSPSC3B,PSPSC2,KFLDPTRUV,KFLDPTRSC)
+   	IEND = IST+2*KF_SCALARS-1
+   	CALL UPDSPB(KF_SCALARS,ZOA1(IST:IEND,:,:),PSPSCALAR)
+
+      !$ACC END DATA
+	 ELSE
+   	IF (PRESENT(PSPSC2) .AND. NF_SC2 > 0) THEN
+        !$ACC DATA PRESENT(PSPSC2) COPYOUT(PSPSC2)
+
+        IEND = IST+2*NF_SC2-1
+        CALL UPDSPB(NF_SC2,ZOA1(IST:IEND,:,:),PSPSC2)
+        IST=IST+2*NF_SC2
+
+        !$ACC END DATA
+   	ENDIF
+
+   	IF (PRESENT(PSPSC3A) .AND. NF_SC3A > 0) THEN
+        !$ACC DATA PRESENT(PSPSC3A) COPYOUT(PSPSC3A)
+
+        DO J3=1,UBOUND(PSPSC3A,3)
+      	 IEND = IST+2*NF_SC3A-1
+      	 CALL UPDSPB(NF_SC3A,ZOA1(IST:IEND,:,:),PSPSC3A(:,:,J3))
+      	 IST=IST+2*NF_SC3A
+        ENDDO
+
+        !$ACC END DATA
+   	ENDIF
+
+   	IF (PRESENT(PSPSC3B) .AND. NF_SC3B > 0) THEN
+        !$ACC DATA PRESENT(PSPSC3B) COPYOUT(PSPSC3B)
+
+        DO J3=1,UBOUND(PSPSC3B,3)
+      	 IEND = IST+2*NF_SC3B-1
+      	 CALL UPDSPB(NF_SC3B,ZOA1(IST:IEND,:,:),PSPSC3B(:,:,J3))
+      	 IST=IST+2*NF_SC3B
+        ENDDO
+
+        !$ACC END DATA
+   	ENDIF
+	 ENDIF
+  ENDIF
 
   IF (LHOOK) CALL DR_HOOK('LTDIR_MOD',1,ZHOOK_HANDLE)
-  END SUBROUTINE LTDIR
-  END MODULE LTDIR_MOD
+END SUBROUTINE LTDIR
+
+SUBROUTINE PRFI2B(KFIELD,KF_UV,PAIA,KMODE)
+  INTEGER(KIND=JPIM),INTENT(IN)  :: KFIELD,KF_UV,KMODE
+  REAL(KIND=JPRBT),INTENT(OUT) :: PAIA(:,:,:)
+
+  INTEGER(KIND=JPIM) :: KM,KMLOC,IGLS,ISL,JF,JGL,OFFSET1,OFFSET2
+
+  ! like: paia(1:2*kf,jgl,kmloc) = foubuf(1:2*kf,off1)+/-foubuf(1:2*kf,off2)
+
+  !$ACC DATA PRESENT(PAIA,FOUBUF,D_NPNTGTB1,D_NSTAGT1B,D_MYMS,R_NDGL,R_NDGNH,G_NDGLU,&
+  !$ACC D_NPROCL,KF_UV,F,F%RACTHE)
+
+  !$ACC PARALLEL LOOP DEFAULT(NONE) COLLAPSE(3) PRIVATE(KM,ISL,IGLS,OFFSET1,OFFSET2)
+  DO KMLOC=1,D_NUMP
+	  DO JGL=1,R_NDGNH
+   	  DO JF=1,2*KFIELD
+      	  KM = D_MYMS(KMLOC)
+      	  ISL = MAX(R_NDGNH-G_NDGLU(KM),0)
+      	  if (JGL <= ISL) cycle
+
+           IGLS = R_NDGL+1-JGL
+           OFFSET1 = (D_NSTAGT1B(D_NPROCL(JGL) )+D_NPNTGTB1(KMLOC,JGL))*2*KFIELD
+           OFFSET2 = (D_NSTAGT1B(D_NPROCL(IGLS))+D_NPNTGTB1(KMLOC,IGLS))*2*KFIELD
+
+           ! EXTRACT SYM./ANTISYM. FIELDS FROM FOURIER ARRAY.
+           IF (KMODE == -1 ) THEN
+             PAIA(JF,JGL,KMLOC) = FOUBUF(OFFSET1+JF)-FOUBUF(OFFSET2+JF)
+           ELSE
+             PAIA(JF,JGL,KMLOC) = FOUBUF(OFFSET1+JF)+FOUBUF(OFFSET2+JF)
+           ENDIF
+
+           ! DIVIDE U V BY A*COS(THETA)
+           if (jf <= 4*KF_UV) PAIA(JF,JGL,KMLOC) = PAIA(JF,JGL,KMLOC)*F%RACTHE(JGL)
+   	  ENDDO
+	  ENDDO
+  END DO
+
+  !$ACC END DATA
+END SUBROUTINE PRFI2B
+
+SUBROUTINE UPDSPB(KFIELD,POA,PSPEC)
+  INTEGER(KIND=JPIM),INTENT(IN) :: KFIELD
+  REAL(KIND=JPRBT),INTENT(IN) :: POA(:,:,:)
+  REAL(KIND=JPRB),INTENT(OUT) :: PSPEC(:,:)
+
+  INTEGER(KIND=JPIM) :: KM,KMLOC,INM,JFLD,JN,IASM0
+
+  ! The following transfer reads :
+  ! SPEC(k,NASM0(m)+NLTN(n)*2)  =POA(nn,2*k-1) (real part)
+  ! SPEC(k,NASM0(m)+NLTN(n)*2+1)=POA(nn,2*k  ) (imaginary part)
+  ! with n from m to NSMAX
+  ! and nn=NTMAX+2-n from NTMAX+2-m to NTMAX+2-NSMAX.
+  ! NLTN(m)=NTMAX+2-m : n=NLTN(nn),nn=NLTN(n)
+  ! nn is the loop index.
+
+  !$ACC DATA PRESENT(PSPEC,POA,R,D)
+
+  !$ACC PARALLEL LOOP COLLAPSE(3) PRIVATE(KM,IASM0,INM) DEFAULT(NONE)
+  DO KMLOC=1,D%NUMP
+     DO JN=0,R%NSMAX
+        DO JFLD=1,KFIELD
+           KM = D%MYMS(KMLOC)
+           IASM0 = D%NASM0(KM)
+
+           IF (KM == 0) THEN
+              INM = IASM0+2*JN
+              PSPEC(JFLD,INM) = POA(2*JFLD-1,R%NTMAX+2-JN,KMLOC)
+              PSPEC(JFLD,INM+1) = 0.0_JPRBT
+           ELSE
+              if (JN >= KM) then
+                 INM = IASM0+2*(JN-KM)
+                 PSPEC(JFLD,INM) = POA(2*JFLD-1,R%NTMAX+2-JN,KMLOC)
+                 PSPEC(JFLD,INM+1) = POA(2*JFLD,R%NTMAX+2-JN,KMLOC)
+              end if
+           end if
+        ENDDO
+     ENDDO
+  ENDDO
+  !$ACC END PARALLEL
+
+  !$ACC END DATA
+END SUBROUTINE UPDSPB
+
+SUBROUTINE UVTVD(KFIELD)
+	INTEGER(KIND=JPIM), INTENT(IN)  :: KFIELD
+
+	INTEGER(KIND=JPIM) :: KM, KMLOC,II, IN, IR, J, JN
+	INTEGER(KIND=JPIM) :: IUS, IUE, IVS, IVE, IVORS, IVORE, IDIVS, IDIVE
+	REAL(KIND=JPRBT) :: ZKM,ZN(-1:R%NTMAX+3)
+	REAL(KIND=JPRBT),POINTER :: PU(:,:,:),PV(:,:,:),PVOR(:,:,:),PDIV(:,:,:)
+
+	IUS = 1
+	IUE = 2*KFIELD
+	IVS = 2*KFIELD+1
+	IVE = 4*KFIELD
+	IVORS = 1
+	IVORE = 2*KFIELD
+	IDIVS = 2*KFIELD+1
+	IDIVE = 4*KFIELD
+
+	PU => ZOA1(IUS:IUE,:,:)
+	PV => ZOA1(IVS:IVE,:,:)
+	PVOR => ZOA2(IVORS:IVORE,:,:)
+	PDIV => ZOA2(IDIVS:IDIVE,:,:)
+
+	!$ACC DATA CREATE(ZN) COPY(D_MYMS,D_NUMP,R_NTMAX,F,F%RN,F%NLTN) &
+	!$ACC PRESENT(ZEPSNM,PU,PV,PVOR,PDIV)
+
+	!$ACC PARALLEL LOOP DEFAULT(NONE)
+	DO J=-1,R_NTMAX+3
+	  ZN(J) = F%RN(J)
+	ENDDO
+
+	!$ACC PARALLEL LOOP COLLAPSE(2) PRIVATE(IN) DEFAULT(NONE)
+	DO KMLOC=1,D_NUMP
+	  DO J=1,2*KFIELD
+   	 IN = F%NLTN(D_MYMS(KMLOC)-1)
+   	 PU(J,IN,KMLOC) = 0.0_JPRBT
+   	 PV(J,IN,KMLOC) = 0.0_JPRBT
+	  ENDDO
+	ENDDO
+
+	!$ACC parallel loop collapse(3) private(IR,II,IN,KM,ZKM) DEFAULT(NONE)
+	DO KMLOC=1,D_NUMP
+	  DO JN=0,R_NTMAX
+   	 DO J=1,KFIELD
+      	IR = 2*J-1
+      	II = IR+1
+      	KM = D_MYMS(KMLOC)
+      	ZKM = REAL(KM,JPRBT)
+      	IN = R_NTMAX+2-JN
+
+      	IF (KM == 0) THEN
+         	PVOR(IR,IN,kmloc) = -&
+         	  &ZN(JN)*ZEPSNM(KMLOC,JN+1)*PU(IR,IN-1,kmloc)+&
+         	  &ZN(JN+1)*ZEPSNM(KMLOC,JN)*PU(IR,IN+1,kmloc)
+         	PDIV(IR,IN,kmloc) = &
+         	  &ZN(JN)*ZEPSNM(KMLOC,JN+1)*PV(IR,IN-1,kmloc)-&
+         	  &ZN(JN+1)*ZEPSNM(KMLOC,JN)*PV(IR,IN+1,kmloc)
+      	ELSE IF(JN >= KM) THEN
+      	  PVOR(IR,IN,kmloc) = -ZKM*PV(II,IN,kmloc)-&
+      		&ZN(JN)*ZEPSNM(KMLOC,JN+1)*PU(IR,IN-1,kmloc)+&
+      		&ZN(JN+1)*ZEPSNM(KMLOC,JN)*PU(IR,IN+1,kmloc)
+      	  PVOR(II,IN,kmloc) = +ZKM*PV(IR,IN,kmloc)-&
+      		&ZN(JN)*ZEPSNM(KMLOC,JN+1)*PU(II,IN-1,kmloc)+&
+      		&ZN(JN+1)*ZEPSNM(KMLOC,JN)*PU(II,IN+1,kmloc)
+      	  PDIV(IR,IN,kmloc) = -ZKM*PU(II,IN,kmloc)+&
+      		&ZN(JN)*ZEPSNM(KMLOC,JN+1)*PV(IR,IN-1,kmloc)-&
+      		&ZN(JN+1)*ZEPSNM(KMLOC,JN)*PV(IR,IN+1,kmloc)
+      	  PDIV(II,IN,kmloc) = +ZKM*PU(IR,IN,kmloc)+&
+      		&ZN(JN)*ZEPSNM(KMLOC,JN+1)*PV(II,IN-1,kmloc)-&
+      		&ZN(JN+1)*ZEPSNM(KMLOC,JN)*PV(II,IN+1,kmloc)
+      	ENDIF
+   	ENDDO
+	  ENDDO
+	ENDDO
+
+	!$acc end data
+END SUBROUTINE UVTVD
+END MODULE LTDIR_MOD
