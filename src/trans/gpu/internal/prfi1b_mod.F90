@@ -8,11 +8,9 @@
 !
 
 MODULE PRFI1B_MOD
-  CONTAINS
-  SUBROUTINE PRFI1B(PIA,PSPEC,KFIELDS,KDIM,KFLDPTR)
-  
-USE PARKIND1  ,ONLY : JPIM     ,JPRB
-  
+CONTAINS
+SUBROUTINE PRFI1B(PIA,PSPEC,KFIELDS,KDIM,KFLDPTR)
+  USE PARKIND1  ,ONLY : JPIM     ,JPRB
   use tpm_gen, only: nout
   USE TPM_DIM         ,ONLY : R,R_NSMAX
   USE TPM_DISTR       ,ONLY : D,D_NUMP,D_MYMS,D_NASM0
@@ -71,7 +69,6 @@ USE PARKIND1  ,ONLY : JPIM     ,JPRB
   INTEGER(KIND=JPIM),INTENT(IN) :: KDIM
   INTEGER(KIND=JPIM),INTENT(IN),OPTIONAL :: KFLDPTR(:)
   
-  !     LOCAL INTEGER SCALARS
   INTEGER(KIND=JPIM) :: II, INM, IR, J, JFLD, ILCM, IOFF,IFLD
   
   
@@ -80,19 +77,11 @@ USE PARKIND1  ,ONLY : JPIM     ,JPRB
   !*       1.    EXTRACT FIELDS FROM SPECTRAL ARRAYS.
   !              --------------------------------------------------
 
-  !$ACC DATA &
-  !$ACC      PRESENT(D_NUMP,R_NSMAX,D_MYMS,D_NASM0) &
-  !$ACC      PRESENT(PIA) &
-  !$ACC      PRESENT(PSPEC)
+  !$ACC DATA PRESENT(D_NUMP,R_NSMAX,D_MYMS,D_NASM0,PIA,PSPEC)
 
   !$ACC DATA IF(PRESENT(KFLDPTR)) PRESENT(KFLDPTR)
-
   
   IF(PRESENT(KFLDPTR)) THEN
-   
-   
-   !loop over wavenumber
-   
    !$ACC PARALLEL LOOP COLLAPSE(3) DEFAULT(NONE) PRIVATE(KM,ILCM,IFLD,IOFF,IR,II,INM)
    DO KMLOC=1,D_NUMP
       DO J=1,R_NSMAX+1
@@ -110,8 +99,6 @@ USE PARKIND1  ,ONLY : JPIM     ,JPRB
             END IF
          ENDDO
       ENDDO
-   
-      ! end loop over wavenumber
    END DO
 
    !$ACC PARALLEL LOOP DEFAULT(NONE) COLLAPSE(2) PRIVATE(KM,ILCM)
@@ -123,14 +110,9 @@ USE PARKIND1  ,ONLY : JPIM     ,JPRB
          PIA(JFLD,2,KMLOC) = 0.0_JPRB
          PIA(JFLD,ILCM+3,KMLOC) = 0.0_JPRB
       ENDDO 
-      ! end loop over wavenumber
    END DO
-
   ELSE
-
-   !loop over wavenumber
-
-   !$ACC PARALLEL LOOP !!COLLAPSE(3) PRIVATE(KM,ILCM,IOFF,INM,IR,II)
+   !$ACC PARALLEL LOOP COLLAPSE(3) PRIVATE(KM,ILCM,IOFF,INM)
    DO KMLOC=1,D_NUMP
       DO J=1,R_NSMAX+1
          DO JFLD=1,KFIELDS
@@ -139,17 +121,13 @@ USE PARKIND1  ,ONLY : JPIM     ,JPRB
             if (J .le. ILCM) then
                IOFF = D_NASM0(KM)
                INM = IOFF+(ILCM-J)*2
-               IR = 2*(JFLD-1)+1
-               II = IR+1
                IF( INM .LT. KDIM ) THEN
-               PIA(IR,J+2,KMLOC) = PSPEC(JFLD,INM  )
-               PIA(II,J+2,KMLOC) = PSPEC(JFLD,INM+1)
+               PIA(2*JFLD-1,J+2,KMLOC) = PSPEC(JFLD,INM  )
+               PIA(2*JFLD,J+2,KMLOC) = PSPEC(JFLD,INM+1)
                ENDIF
             end if
          ENDDO
       ENDDO
-   
-      ! end loop over wavenumber
    END DO
 
    !$ACC PARALLEL LOOP COLLAPSE(2) PRIVATE(KM,ILCM)
@@ -161,15 +139,10 @@ USE PARKIND1  ,ONLY : JPIM     ,JPRB
          PIA(JFLD,2,KMLOC) = 0.0_JPRB
          PIA(JFLD,ILCM+3,KMLOC) = 0.0_JPRB
       ENDDO 
-      ! end loop over wavenumber
    END DO
-   
   END IF   
 
-   !$ACC END DATA
-   !$ACC END DATA
-
-  !     ------------------------------------------------------------------
-  
-  END SUBROUTINE PRFI1B
-  END MODULE PRFI1B_MOD
+  !$ACC END DATA
+  !$ACC END DATA
+END SUBROUTINE PRFI1B
+END MODULE PRFI1B_MOD

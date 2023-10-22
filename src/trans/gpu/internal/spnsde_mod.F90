@@ -86,10 +86,7 @@ INTEGER(KIND=JPIM) :: IJ, ISKIP, J, JN,JI,ISMAX, IR, II
 REAL(KIND=JPRBT) :: ZZEPSNM(-1:R%NSMAX+4)
 REAL(KIND=JPRBT) :: ZN(-1:R%NTMAX+4)
 
-!$ACC DATA                             &
-!$ACC      CREATE (ZN,ZZEPSNM)         &
-!$ACC      PRESENT (F,F%RN)   &
-!$ACC      PRESENT (PEPSNM, PF, PNSD)
+!$ACC DATA CREATE (ZN,ZZEPSNM) PRESENT (F,F%RN,PEPSNM,PF,PNSD)
 
 !     ------------------------------------------------------------------
 
@@ -112,14 +109,14 @@ DO KMLOC=1,D%NUMP
    ELSE
        ZZEPSNM(IJ) = 0
    ENDIF
-   !write(nout,*) 'deriv dy debug in ; ',JN, IJ, ZN(IJ),ZZEPSNM(IJ),PEPSNM(KMLOC,JN)
   ENDDO
+
   !$ACC KERNELS DEFAULT(NONE)
   ZN(0) = F%RN(ISMAX+3)
   !$ACC END KERNELS
 
   IF(KM == 0) THEN
-      !$ACC PARALLEL LOOP DEFAULT(NONE) PRIVATE(IR)
+      !$ACC PARALLEL LOOP DEFAULT(NONE) PRIVATE(IR,ji)
       DO J=1,KF_SCALARS
         IR = 2*J-1
         DO JI=2,ISMAX+3
@@ -128,8 +125,7 @@ DO KMLOC=1,D%NUMP
         ENDDO
       ENDDO
   ELSE  
-
-    !$ACC PARALLEL LOOP COLLAPSE(2) DEFAULT(NONE) PRIVATE(IR,II)
+    !$ACC PARALLEL LOOP COLLAPSE(2) DEFAULT(NONE) PRIVATE(ji,IR,II)
     DO J=1,KF_SCALARS
       DO JI=2,ISMAX+3-KM
         IR = 2*J-1
@@ -138,20 +134,11 @@ DO KMLOC=1,D%NUMP
           &ZN(JI-2)*ZZEPSNM(JI-1)*PF(IR,JI-1,KMLOC)
         PNSD(II,JI,KMLOC) = -ZN(JI+1)*ZZEPSNM(JI)*PF(II,JI+1,KMLOC)+&
           &ZN(JI-2)*ZZEPSNM(JI-1)*PF(II,JI-1,KMLOC)
-        !write(301,*) 'deriv dy debug 2nd; ',KMLOC,IR,II,JI,J,PNSD(IR,JI,KMLOC),PNSD(II,JI,KMLOC)
-        !call flush(301)
       ENDDO
     ENDDO
-    !write(301,*) 'deriv dy debug 2nd; ',KMLOC,maxval(PNSD(1,:,KMLOC)),maxval(PNSD(2,:,KMLOC))
-    !call flush(301)
   ENDIF
-
-!end loop over wavenumber
 END DO
 
 !$ACC END DATA
-
-!     ------------------------------------------------------------------
-
 END SUBROUTINE SPNSDE
 END MODULE SPNSDE_MOD

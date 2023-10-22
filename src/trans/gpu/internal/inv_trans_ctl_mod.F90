@@ -277,58 +277,19 @@ IF(NPROMATR > 0 .AND. IF_GPB > NPROMATR) THEN
   ENDDO
 
 ELSE
-  !call nvtxStartRange("INVTRANS")
-
   !$ACC DATA CREATE(FOUBUF)
+
   ! No splitting of fields, transform done in one go
-  ! from PSPXXX to FOUBUF
-  !call nvtxStartRange("LTINV")
-  CALL LTINV_CTL(KF_OUT_LT,KF_UV,KF_SCALARS,KF_SCDERS, &
-   &PSPVOR=PSPVOR,PSPDIV=PSPDIV,PSPSCALAR=PSPSCALAR,&
-   &PSPSC3A=PSPSC3A,PSPSC3B=PSPSC3B,PSPSC2=PSPSC2,&
-   &FSPGL_PROC=FSPGL_PROC)
-  !call nvtxEndRange
+  CALL LTINV_CTL(KF_OUT_LT,KF_UV,KF_SCALARS,KF_SCDERS,PSPVOR,PSPDIV,PSPSCALAR,&
+   &PSPSC3A,PSPSC3B,PSPSC2,FSPGL_PROC=FSPGL_PROC)
 
   ! from FOUBUF to PGPXXX
-  !call nvtxStartRange("FTINV")
-  CALL FTINV_CTL(KF_UV_G,KF_SCALARS_G,&
-   & KF_UV,KF_SCALARS,KF_SCDERS,KF_GP,KF_FS,KF_OUT_LT,&
-   & KVSETUV=KVSETUV,KVSETSC=KVSETSC,&
-   & KVSETSC3A=KVSETSC3A,KVSETSC3B=KVSETSC3B,KVSETSC2=KVSETSC2,&
+  CALL FTINV_CTL(KF_UV_G,KF_SCALARS_G,KF_UV,KF_SCALARS,KF_SCDERS,KF_GP,KF_FS,KF_OUT_LT,&
+   & KVSETUV,KVSETSC,KVSETSC3A=KVSETSC3A,KVSETSC3B=KVSETSC3B,KVSETSC2=KVSETSC2,&
    & PGP=PGP,PGPUV=PGPUV,PGP3A=PGP3A,PGP3B=PGP3B,PGP2=PGP2)
+
   !$ACC END DATA
-
-  if (kf_uv_g > 0) then
-    do jf=1,size(pgpuv,3)
-      write(nout,*) "uv:",jf,minval(pgpuv(:,:,jf,:)),maxval(pgpuv(:,:,jf,:))
-    end do
-  end if
-
-  if (kf_scalars_g) then
-    if (present(pgp)) then
-      do jf=1,size(pgp,2)
-        write(nout,*) "gp:",jf,minval(pgp(:,jf,:)),maxval(pgp(:,jf,:))
-      end do
-    else
-      if (present(pgp2)) then
-      do jf=1,size(pgp2,2)
-        write(nout,*) "gp2:",jf,minval(pgp2(:,jf,:)),maxval(pgp2(:,jf,:))
-      end do
-      end if
-      if (present(pgp3a)) then
-      do jf=1,size(pgp3a,3)
-        write(nout,*) "gp3a:",jf,minval(pgp3a(:,:,jf,:)),maxval(pgp3a(:,:,jf,:))
-      end do
-      end if
-    end if
-  end if
-   !call nvtxEndRange
-
-   !call nvtxEndRange
-
 ENDIF
-
-!     ------------------------------------------------------------------
 
 END SUBROUTINE INV_TRANS_CTL
 END MODULE INV_TRANS_CTL_MOD
