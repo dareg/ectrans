@@ -80,8 +80,11 @@ MODULE LTINV_CTL_MOD
   
   !$ACC DATA CREATE(FOUBUF_IN) PRESENT(FOUBUF)
   
-  ILEI2 = 8*KF_UV + 2*KF_SCALARS + 2*KF_SCDERS
+  ILEI2 = 2*(4*KF_UV+KF_SCALARS+KF_SCDERS)
   IDIM1 = 2*KF_OUT_LT
+
+  write(nout,*) "Inverse Legendre transforms (ltinv) - kf_uv/scal/scders:",kf_uv,&
+    kf_scalars,kf_scders
 
   IF(KF_OUT_LT > 0) THEN
       ! from PSPXXX to FOUBUF_IN
@@ -91,10 +94,10 @@ MODULE LTINV_CTL_MOD
 
   ! from FOUBUF_IN to FOUBUF
 #ifdef USE_CUDA_AWARE_MPI_FT
-  WRITE(NOUT,*) 'ltinv_ctl:TRMTOL_CUDAAWARE'
+  WRITE(NOUT,*) "Transpositions S/F TRMTOL_CUDAAWARE - kf_out_lt:",kf_out_lt
   CALL TRMTOL_CUDAAWARE(FOUBUF_IN,FOUBUF,IDIM1)
 #else
-  WRITE(NOUT,*) 'ltinv_ctl:TRMTOL'
+  WRITE(NOUT,*) "Transpositions S/F TRMTOL - kf_out_lt:",kf_out_lt
   !$ACC UPDATE HOST(FOUBUF_IN)
   CALL TRMTOL(FOUBUF_IN,FOUBUF,IDIM1)
   !$ACC UPDATE DEVICE(FOUBUF)
