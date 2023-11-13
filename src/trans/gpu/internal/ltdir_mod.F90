@@ -44,11 +44,11 @@ SUBROUTINE LTDIR(KF_FS,KF_UV,KF_SCALARS,KLED2,PSPVOR,PSPDIV,PSPSCALAR,&
 
   !$acc data copyin(kf_uv)
 
-  write(nout,*) "anti-sym. ledir - nfs/nuv/nle:",kf_fs,kf_uv,kled2
+  write(0,*) "anti-sym. ledir - nfs/nuv/nle:",kf_fs,kf_uv,kled2
   CALL PRFI2B(KF_FS,KF_UV,ZAIA,-1)
   CALL LEDIR2(KF_FS,KLED2,ZAIA,ZOA1)
 
-  write(nout,*) "sym. ledir (idem)"
+  write(0,*) "sym. ledir (idem)"
   CALL PRFI2B(KF_FS,KF_UV,ZAIA,1)
   CALL LEDIR1(KF_FS,KLED2,ZAIA,ZOA1)
 
@@ -57,10 +57,8 @@ SUBROUTINE LTDIR(KF_FS,KF_UV,KF_SCALARS,KLED2,PSPVOR,PSPDIV,PSPSCALAR,&
   IST = 1
 
   IF (KF_UV > 0) THEN
-     write(nout,*) "Compute vor/div",kf_uv
+     write(0,*) "compute vor/div",kf_uv
      CALL UVTVD(KF_UV)
-
-     write(nout,*) "update spec. (updspb)",KF_UV
 
     !$ACC DATA PRESENT(PSPVOR,PSPDIV) COPYOUT(PSPVOR,PSPDIV)
 
@@ -228,7 +226,8 @@ SUBROUTINE UVTVD(KFIELD)
 	PVOR => ZOA2(IVORS:IVORE,:,:)
 	PDIV => ZOA2(IDIVS:IDIVE,:,:)
 
-	!$ACC DATA CREATE(ZN) COPY(D_MYMS,D_NUMP,R_NTMAX,F,F%RN,F%NLTN) &
+	!!$ACC DATA CREATE(ZN) COPY(D_MYMS,D_NUMP,R_NTMAX,F,F%RN,F%NLTN) &
+	!$ACC DATA CREATE(ZN) COPYin(F,F%RN,F%NLTN) present(r_ntmax,d_nump,d_myms) &
 	!$ACC PRESENT(ZEPSNM,PU,PV,PVOR,PDIV)
 
 	!$ACC PARALLEL LOOP DEFAULT(NONE)

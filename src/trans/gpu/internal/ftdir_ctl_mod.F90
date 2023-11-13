@@ -73,7 +73,7 @@ SUBROUTINE FTDIR_CTL(KF_UV_G,KF_SCALARS_G,KF_GP,KF_FS,KVSETUV,KVSETSC,KPTRGP,&
   REAL(KIND=JPRB),OPTIONAL    , INTENT(IN) :: PGP3B(:,:,:,:)
   REAL(KIND=JPRB),OPTIONAL    , INTENT(IN) :: PGP2(:,:,:)
 
-  INTEGER(KIND=JPIM) :: IVSETUV(KF_UV_G),IVSETSC(KF_SCALARS_G),IVSET(KF_GP),ioff
+  INTEGER(KIND=JPIM) :: j3,IVSETUV(KF_UV_G),IVSETSC(KF_SCALARS_G),IVSET(KF_GP),ioff
 
   IF (PRESENT(KVSETUV)) THEN
 	 if (size(KVSETUV) /= KF_UV_G) call abort_trans("Error: kvsetuv")
@@ -115,22 +115,27 @@ SUBROUTINE FTDIR_CTL(KF_UV_G,KF_SCALARS_G,KF_GP,KF_FS,KVSETUV,KVSETSC,KPTRGP,&
   !$ACC END KERNELS
 
 #ifdef USE_CUDA_AWARE_MPI_FT
-  write(nout,*) "transpose to lat. array (CUDAAWARE)"
+  write(nout,*) "Transpose GP to lat. array (CUDAAWARE)"
   CALL TRGTOL_CUDAAWARE(ZGTF,KF_FS,KF_GP,KF_SCALARS_G,IVSET,KPTRGP,PGP,PGPUV,PGP3A,PGP3B,PGP2)
+
+  ! debug:
+  !!$acc update host(zgtf)
 #else
-  write(nout,*) "transpose to lat. array"
+  write(nout,*) "Transpose GP to lat. array"
   CALL TRGTOL(ZGTF,KF_FS,KF_GP,KF_SCALARS_G,IVSET,KPTRGP,PGP,PGPUV,PGP3A,PGP3B,PGP2)
 
   !$ACC UPDATE DEVICE(ZGTF)
 #endif
 
+  !do j3=1,size(zgtf,1)
+  !  write(nout,*) "zgtf:",minval(zgtf(j3,:)),maxval(zgtf(j3,:))
+  !end do
+
   ! note: no end data (buffer to be passed to ltdir)
   !$ACC ENTER DATA CREATE(FOUBUF_IN)
 
-  if (kf_fs > 0) then
-    write(nout,*) "Direct Fourier transforms - fields:",kf_fs
-    CALL FTDIR(KF_FS)
-  end if
+  write(nout,*) "Direct Fourier transforms - fields:",kf_fs
+  if (kf_fs > 0) CALL FTDIR(KF_FS)
 END SUBROUTINE FTDIR_CTL
 
 subroutine initvset(ivsetsc,kf_gp,KF_SCALARS_G,KVSETSC2,KVSETSC3A,KVSETSC3B,&
