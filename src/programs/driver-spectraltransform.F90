@@ -3,43 +3,42 @@ program transform_test
 	use oml_mod,only: oml_max_threads
 	use mpl_mpif
 	use mpl_module
+#ifdef GRIB_API
 	use grib_api
+#endif
 	use yomgstats,only: jpmaxstat,ylstats=>lstats
 
 	implicit none
 
 	integer(kind=jpim),parameter :: nfldx=412,nrgri=1280
 	integer(kind=jpim) :: nerr,nlin,insf,nsmax,ndgl,nq,ii,nout,noutdump,nspec2,ngptot,&
-		ngptotg,ifld,iflds,icode,jroc,jb,ierr,itag,nspec2g,iret,i,jf,ja,ib,jprtrv
-	integer(kind=jpim),dimension(1) :: iparam,igrib,iedition,icurlev
+		ngptotg,iflds,jroc,jb,itag,nspec2g,i,ibl,iret
 	integer :: jstep,rgri(nrgri)
 	integer(kind=jpim) :: nstats_mem,ntrace_stats,nprnt_stats,nprintnorms,niter,&
 		nmax_resol,nprintlev,npromatr,ncombflen,nproc,nthread,nprgpns,nprgpew,nprtrv,nprtrw,&
 		nspecresmin,mysetv,mysetw,myseta,mysetb,mp_type,mbx_size,ivsetsc(1),npsp,nflevg,&
 		nflevl,isqr,nproma,ngpblks,iprtrv,iprtrw,iprsp,ilevpp,irest,ilev,jl,ilastlev,&
-		ndimgmv,ndimgmvs,myproc,jj
+		ndimgmv,ndimgmvs,nuv,myproc,jj
 	integer(kind=jpim),allocatable :: nloen(:),ito(:),nprcids(:),numll(:),ivset(:),&
 		npsurf(:)
 	logical :: lstack,ldone,luserpnm,lkeeprpnm,luseflt,ltrace_stats,lstats_omp,&
 		lstats_comms,lstats_mpl,lstats,lbarrier_stats,lbarrier_stats2,ldetailed_stats,&
 		lstats_alloc,lsyncstats,lstatscpu,lstats_mem,lxml_stats,lfftw,lmpoff,lsync_trans,&
-		leq_regions,llinfo,lvorgp,ldivgp
+		leq_regions,llinfo,lvorgp,ldivgp,luvder,lscders,lresetgp
 	character(len=1) :: ctypeg
 	character(len=16) :: cgrid
 	character(len=127) :: cinsf,crt,crtable,cfname
-	real(kind=jprb) :: zmaxerr(4)
+	real(kind=jprb) :: znormsp(1),znormsp1(1),zmaxerr(4)
 	real(kind=jprd) :: ztinit,ztloop,timef,ztstepmax,ztstepmin,ztstepavg,&
 		ztstepmax1,ztstepmin1,ztstepavg1,ztstepmax2,ztstepmin2,ztstepavg2,&
 		zaveave(0:jpmaxstat)
 	real(kind=jprb),parameter :: zra=6371229
 	real(kind=jprd),allocatable :: ztstep(:),ztstep1(:),ztstep2(:)
-	real(kind=jprb),allocatable :: zfpdat(:),znormsp(:),znormsp1(:),znormdiv(:),&
-		znormdiv1(:),znormvor(:),znormvor1(:),znormt(:),znormt1(:),znorm(:)
-	real(kind=jprb),allocatable,target :: zgmv(:,:,:,:),zgmvs(:,:,:),sp3d(:,:,:)
-	real(kind=jprb),allocatable :: zspvorg(:,:),zspdivg(:,:),zspspg(:,:),zsptg(:,:,:),&
-		zsp(:,:)
+	real(kind=jprb),allocatable :: znormdiv(:),znormdiv1(:),&
+		znormvor(:),znormvor1(:),znormt(:),znormt1(:)
+	real(kind=jprb),allocatable,target :: zgmv(:,:,:,:),zgmvs(:,:,:),sp3d(:,:,:),zsp(:,:)
 	real(kind=jprb),pointer :: zvor(:,:),zdiv(:,:),zt(:,:,:),zuv(:,:,:,:),zgpt(:,:,:,:),&
-      zwind(:,:,:,:)
+		zwind(:,:,:,:)
 
 	namelist/namrgri/ndgl,nlin,nq,nsmax,rgri
 	!namelist/namtrans/nprintnorms,niter,nproma,npromatr,nspecresmin,mbx_size
@@ -47,7 +46,7 @@ program transform_test
 		ldetailed_stats,lstats_alloc,lstats_comms,lstats_mpl,lstats_omp,lstats_mem,&
 		lxml_stats,lsyncstats,lstatscpu,nprnt_stats
 	namelist/namtrans/lfftw,luserpnm,lkeeprpnm,luseflt,lsync_trans,leq_regions,&
-		lvorgp,ldivgp,nprintlev,nprintnorms
+		lvorgp,ldivgp,luvder,lscders,nprintlev,nprintnorms
 
 #include "setup_trans0.h"
 #include "setup_trans.h"
@@ -61,8 +60,11 @@ program transform_test
 #include "abor1.intfb.h"
 #include "gstats_setup.intfb.h"
 
-	call mpl_init()
 	ztinit = timef()
+
+	call mpl_init()
+
+	itag = 123456
 
 	nproc = mpl_nproc()
 	myproc = mpl_myrank()
@@ -73,6 +75,10 @@ program transform_test
 
 	nout = 6
 	if (myproc /= 1) open(nout,file="/dev/null")
+
+	ztinit = (timef()-ztinit)/1000
+	write(nout,"('Startup time:',F9.3,'s')") ztinit
+	ztinit = timef()
 
 	write(nout,*) "MPI/OMP setting:",nproc,"x",nthread
 
@@ -127,6 +133,8 @@ program transform_test
 	lsync_trans = .true.
 	lvorgp = .false.
 	ldivgp = .true.
+	luvder = .false.
+	lscders = .true.
 	nprintlev = 1
 	nprintnorms = 1
 	npromatr = 0
@@ -136,6 +144,7 @@ program transform_test
 	close(4)
 	write(nout,*) "lfftw/l(use/keep)rpnm/luseflt:",lfftw,luserpnm,lkeeprpnm,luseflt
 	write(nout,*) "leq_regions/npromatr/nspecresmin:",leq_regions,npromatr,nspecresmin
+	write(nout,*) "lvorgp/ldivgp/luvder/lscders:",lvorgp,ldivgp,luvder,lscders
 
 	! defaults: cubic octahedral grid,...
 	cgrid = ""
@@ -171,6 +180,7 @@ program transform_test
 			if (ndgl > 0) write(nout,*) "Info: resetting ndgl as to grid tag ",trim(cgrid)
 			call parse_grid(cgrid,ndgl,nloen)
 		end if
+#ifdef GRIB_API
 	else
 		if (myproc == 1) then
 			cinsf = ""
@@ -179,7 +189,12 @@ program transform_test
 			write(nout,*) "Read GRIB file info:",cinsf
 			inquire(file=cinsf,exist=llinfo)
 			if (.not.llinfo) call abor1("Error: rgri <= 0")
-			call readgrib_resol(cinsf,nsmax)
+
+			call grib_open_file(insf,cinsf,"R",iret)
+			if (iret /= grib_success) call abor1("ERROR OPENING FILE INPUT SPECTRAL FILE")
+
+			call readgrib_resol(insf,nsmax)
+			call grib_close_file(insf)
 
 			if (ndgl == 0) call setndgl(nlin,nq,nsmax,ndgl)
 			call check_ndgl(nlin,ndgl)
@@ -226,6 +241,7 @@ program transform_test
 			call mpl_broadcast(nsmax,itag,1,cdstring='transform_test:')
 			call mpl_broadcast(nloen,itag,1,cdstring='transform_test:')
 		end if
+#endif
 	end if
 
 	write(nout,*) "Set up distribution (tasks and sets)"
@@ -308,10 +324,6 @@ program transform_test
 	npsp = npsurf(mysetv)
 	ivsetsc(1) = iprsp
 
-	itag = 123456
-	ilev = 0
-	iflds = 0
-
 	write(nout,*) "Setup transforms",nproc
 	nmax_resol = 37
 	call setup_trans0(kout=nout,kerr=nerr,kprintlev=nprintlev,kmax_resol=nmax_resol,&
@@ -328,8 +340,7 @@ program transform_test
 
 	ngpblks = (ngptot-1)/nproma+1
 
-	allocate(sp3d(nflevl,nspec2,3))
-	allocate(zsp(1,nspec2))
+	allocate(sp3d(nflevl,nspec2,3),zsp(1,nspec2))
 
 	write(nout,*) "Initialize spectral data"
 	call initspec(nsmax,zsp,sp3d)
@@ -355,138 +366,46 @@ program transform_test
 		ilev = ilev+numll(jb)
 	end do
 
+#ifdef GRIB_API
 	inquire(file=cinsf,exist=llinfo)
 	if (llinfo) then
-		if (myproc == 1) then
-			write(nout,*) "allocate full-grid spectral data",nflevg,nspec2g
-			allocate(zfpdat(nspec2g))
-			allocate(zspvorg(nflevg,nspec2g))
-			allocate(zspdivg(nflevg,nspec2g))
-			allocate(zsptg(nflevg,nspec2g,1))
-			allocate(zspspg(1,nspec2g))
-		end if
-
-		igrib(1) = 0
-		icode = 0
-		ilastlev = 0
-
 		call grib_open_file(insf,cinsf,"R",iret)
 		if (iret /= grib_success) call abor1("ERROR OPENING FILE INPUT SPECTRAL FILE")
 
-		do
-			if (myproc == 1) then
-				write(nout,*) "read spectral data from GRIB file"
-				call grib_new_from_file(insf,igrib(1),iret)
-				if (iret == grib_end_of_file) exit
+		call readgrib(insf,nflevg,nspec2g,ivset,ivsetsc,zsp,zvor,zdiv,zt)
+	end if
+#endif
 
-				if (iflds < nfldx) then
-					if (iret /= grib_success) call abor1("ERROR GRIB_NEW_FROM_FILE")
-
-					call grib_get(igrib(1),"edition",iedition(1),iret)
-					call grib_get(igrib(1),"paramId",iparam(1),iret)
-
-					if (iparam(1) /= icode.and.icode /= 0) then
-						print*,"FIELD ",iparam(1)," NOT TRANSFORMED"
-						call grib_copy(igrib)
-
-						cycle
-					end if
-
-					call grib_get(igrib(1),"level",icurlev,iret)
-					call grib_get(igrib(1),"shortName",cfname,iret)
-					call grib_get(igrib(1),"values",zfpdat,iret)
-
-					call grib_release(igrib(1))
-
-					ilev = icurlev(1)
-					if (ilev > nflevg) call abor1("NFLEVG < ILASTLEV")
-					ilastlev = max(ilev,ilastlev)
-
-					if (cfname == "lnsp") then
-						zspspg(1,:) = zfpdat(:)
-						iflds = iflds+1
-					else if (cfname == "vo") then
-						zspvorg(ilev,:) = zfpdat(:)
-						iflds = iflds+1
-					else if (cfname == "d") then
-						zspdivg(ilev,:) = zfpdat(:)
-						iflds = iflds+1
-					else if (cfname == "t") then
-						zsptg(ilev,:,1) = zfpdat(:)
-						iflds = iflds+1
-					end if
-				end if
-
-				if (nproc > 1) then
-					do jroc=2,nproc
-						call mpl_send(ilev,nprcids(jroc),itag)
-					end do
-				end if
-			else
-				call mpl_recv(ilev,nprcids(1),itag)
-			end if
-
-			if (nproc > 1) then
-				if (ilev > 0) call mpl_broadcast(iparam(1),itag,1,cdstring='transform_test:')
-				call mpl_barrier()
-			end if
-
-			if (ilev == 0) exit
-		end do
-
-		if (myproc == 1) call grib_close_file(insf)
-
-		if (nproc > 1) then
-			call mpl_broadcast(iflds,itag,1,cdstring='transform_test:')
-			call mpl_broadcast(ilastlev,itag,1,cdstring='transform_test:')
+	write(nout,*) "allocate local GMV data"
+	! reset all GP fields, even those not active on SP fields (ie unused in dir_trans)
+	lresetgp = .false.
+	ndimgmvs = 1
+	if (lscders)  ndimgmvs = 3
+	allocate(zgmvs(nproma,ndimgmvs,ngpblks))
+	nuv = 4
+	if (luvder) nuv = 8
+	if (.true.) then
+		ndimgmv = 5
+		allocate(zgmv(nproma,nflevg,ndimgmv,ngpblks))
+		allocate(zwind(nproma,nflevg,nuv,ngpblks))
+		if (lscders) then
+			zgpt => zgmv(:,:,1:3,:)
+		else
+			zgpt => zgmv(:,:,1:1,:)
 		end if
-
-		if (ilastlev < 1) call abor1("ILASTLEV < 1")
-
-		if (ilastlev < nflevg) then
-			if (myproc == 1) then
-				write(nout,*) "fill sp data for non read levels, from",ilastlev
-
-				do ilev=ilastlev+1,nflevg
-					zspvorg(ilev,:) = zspvorg(mod(ilev-1,ilastlev)+1,:)
-					zspdivg(ilev,:) = zspdivg(mod(ilev-1,ilastlev)+1,:)
-					zsptg(ilev,:,1) = zsptg(mod(ilev-1,ilastlev)+1,:,1)
-				end do
-			end if
-		end if
-
-		write(nout,'("SPECTRAL FIELDS HAVE BEEN SUCCESSFULY READ, IFLDS=",I3)') iflds
-
-		allocate(ito(iflds))
-		ito(:) = 1
-
-		call dist_spec(pspecg=zspspg,kfdistg=1,kfrom=ito,pspec=zsp,kvset=ivsetsc)
-		call dist_spec(zspvorg,kfdistg=nflevg,kfrom=ito,pspec=zvor,kvset=ivset)
-		call dist_spec(zspdivg,kfdistg=nflevg,kfrom=ito,pspec=zdiv,kvset=ivset)
-		call dist_spec(zsptg(:,:,1),kfdistg=nflevg,kfrom=ito,pspec=zt(:,:,1),kvset=ivset)
-		call dist_spec(zspspg,kfdistg=1,kfrom=ito,pspec=zsp,kvset=ivsetsc)
-
-		if (myproc == 1) then
-			deallocate(zfpdat,ito)
-			deallocate(zspvorg,zspdivg,zsptg,zspspg)
+	else
+		ndimgmv = 5+nuv
+		allocate(zgmv(nproma,nflevg,ndimgmv,ngpblks))
+		zwind => zgmv(:,:,1:nuv,:)
+		if (lscders) then
+			zgpt => zgmv(:,:,5:7,:)
+		else
+			zgpt => zgmv(:,:,5:5,:)
 		end if
 	end if
 
-	write(nout,*) "allocate local GMV data"
-	ndimgmvs = 3
-	allocate(zgmvs(nproma,ndimgmvs,ngpblks))
-   if (.false.) then
-	   ndimgmv = 5
-	   allocate(zgmv(nproma,nflevg,ndimgmv,ngpblks))
-	   allocate(zwind(nproma,nflevg,4,ngpblks))
-   else
-	   ndimgmv = 9
-	   allocate(zgmv(nproma,nflevg,ndimgmv,ngpblks))
-      zwind => zgmv(:,:,1:4,:)
-   end if
-
-	zwind(:,:,:,:) = -1
 	zgmv(:,:,:,:) = -2
+	zwind(:,:,:,:) = -1
 	zgmvs(:,:,:) = -3
 
 	if (lvorgp.and.ldivgp) then
@@ -496,24 +415,17 @@ program transform_test
 	else
 		zuv => zwind(:,:,1:2,:)
 	end if
-	zgpt => zgmv(:,:,5:7,:)
 
-	allocate(znormsp(1),znormsp1(1))
 	allocate(znormvor(nflevg),znormvor1(nflevg))
 	allocate(znormdiv(nflevg),znormdiv1(nflevg))
 	allocate(znormt(nflevg),znormt1(nflevg))
 
 	if (nprintnorms > 0) then
 		write(nout,*) "Spectral norms at init:"
-		call specnorm(zsp,ivsetsc,pnorm=znormsp1)
-		call specnorm(zvor(1:nflevl,:),ivset,pnorm=znormvor1)
-		call specnorm(zdiv(1:nflevl,:),ivset,pnorm=znormdiv1)
-		call specnorm(zt(1:nflevl,:,1),ivset,pnorm=znormt1)
-
-		write(nout,'("SP ZNORM=",4x,g22.15)') znormsp1(1)
-		write(nout,'("DIV ZNORM=",i3,x,g22.15)') (i,znormdiv1(i),i=1,nflevg)
-		write(nout,'("VOR ZNORM=",i3,x,g22.15)') (i,znormvor1(i),i=1,nflevg)
-		write(nout,'("T ZNORM=",2x,i3,x,g22.15)') (i,znormt1(i),i=1,nflevg)
+		call spnorm(1,zsp,ivsetsc,znormsp,"SP")
+		call spnorm(nflevg,zvor,ivset,znormvor,"VOR")
+		call spnorm(nflevg,zdiv,ivset,znormdiv,"DIV")
+		call spnorm(nflevg,zt(:,:,1),ivset,znormt,"T")
 	end if
 
 	ztinit = (timef()-ztinit)/1000
@@ -529,7 +441,7 @@ program transform_test
 			lbarrier_stats,lbarrier_stats2,lstats_omp,lstats_comms,lstats_mem,nstats_mem,&
 			lstats_alloc,ltrace_stats,ntrace_stats,nprnt_stats,lxml_stats)
 		call gstats_psut
-		call gstats_label_ifs
+		!call gstats_label_ifs
 	end if
 
 	ztloop = timef()
@@ -543,28 +455,50 @@ program transform_test
 		ztstep(jstep) = timef()
 		ztstep1(jstep) = timef()
 
-		call inv_trans(pspvor=zvor,pspdiv=zdiv,pspsc2=zsp,pspsc3a=zt,ldscders=.true.,&
-			ldvorgp=lvorgp,lddivgp=ldivgp,lduvder=.false.,kresol=1,kproma=nproma,&
-			kvsetuv=ivset,kvsetsc2=ivsetsc,kvsetsc3a=ivset,pgpuv=zwind,&
-			pgp2=zgmvs(:,1:3,:),pgp3a=zgpt)
+		call inv_trans(pspvor=zvor,pspdiv=zdiv,pspsc2=zsp,pspsc3a=zt,ldscders=lscders,&
+			ldvorgp=lvorgp,lddivgp=ldivgp,lduvder=luvder,kresol=1,kproma=nproma,&
+			kvsetuv=ivset,kvsetsc2=ivsetsc,kvsetsc3a=ivset,pgpuv=zwind,pgp2=zgmvs,pgp3a=zgpt)
 		ztstep1(jstep) = (timef()-ztstep1(jstep))/1000
 
 		if (nprintnorms > 0) then
-         call gpnorms(zgmvs,zgpt,zwind,zuv)
+			call gpnorms2d(zgmvs)
+			call gpnorms3d(zgpt,zwind,zuv)
 		end if
 
 		if (jstep == 1) then
 			write(nout,*) "--> step 1, reset GMV to constant values"
-			zgmvs(:,1,:) = 11+myproc/10.
-			zgmvs(:,2,:) = .5+myproc/100.
-			zgmvs(:,3,:) = .25+myproc/200.
+         zgmvs(:,:,:) = 0
+			do ibl=1,ngpblks
+				zgmvs(:,1,ibl) = 11+mod(ibl+myproc,2)/10.
+			end do
+			if (lresetgp.and.lscders) then
+				zgmvs(:,2,:) = .5+mod(myproc,2)/100.
+				zgmvs(:,3,:) = .25+mod(myproc,2)/200.
+			end if
+         zgmv(:,:,:,:) = 0
+         zwind(:,:,:,:) = 0
 			do jl=1,nflevg
-				zuv(:,jl,1,:) = myproc+min(jl,nflevg-2)
-				zuv(:,jl,2,:) = (myproc+mod(jl,3))/2
-				zgpt(:,jl,1,:) = 240+2*myproc+10*abs(jl-(nflevg+1)/2)
+				do ibl=1,ngpblks
+					zuv(:,jl,1,ibl) = 1+mod(ibl+myproc,2)+jl
+					zuv(:,jl,2,ibl) = mod(ibl+myproc,2)+sign(jl,(nflevg+1)/2-jl)
+					zgpt(:,jl,1,ibl) = 280+2*mod(ibl+myproc,2)+10*(jl-(nflevg+1)/2)
+					if (lresetgp) zgpt(:,jl,2,ibl) = ibl+50+mod(myproc,2)+2*(jl-(nflevg+1)/2)
+					if (lresetgp) zgpt(:,jl,3,ibl) = ibl+mod(myproc,2)+(jl-(nflevg+1)/2)
+				end do
 			end do
 
-         call gpnorms(zgmvs,zgpt,zwind,zuv)
+			if (lresetgp) then
+				if (lvorgp) zwind(:,:,1,:) = .02*mod(myproc,2)
+				if (ldivgp) then
+					if (lvorgp) then
+						zwind(:,:,2,:) = .01*mod(myproc,2)
+					else
+						zwind(:,:,1,:) = .01*mod(myproc,2)
+					end if
+				end if
+			end if
+			call gpnorms2d(zgmvs)
+			call gpnorms3d(zgpt,zwind,zuv)
 		end if
 
 		if (.false.) then
@@ -585,18 +519,13 @@ program transform_test
 		write(nout,'(". time at step ",I6,":", F8.4)') jstep,ztstep(jstep)
 
 		if (nprintnorms > 0) then
-			call specnorm(zsp,ivsetsc,pnorm=znormsp)
-			call specnorm(zvor(1:nflevl,:),ivset,pnorm=znormvor)
-			call specnorm(zdiv(1:nflevl,:),ivset,pnorm=znormdiv)
-			call specnorm(zt(1:nflevl,:,1),ivset,pnorm=znormt)
-
-			write(nout,'("SP SPNORM=",4x,g22.15)') znormsp(1)
-			write(nout,'("DIV SPNORM=",i3,x,g22.15)') (i,znormdiv(i),i=1,nflevg)
-			write(nout,'("VOR SPNORM=",i3,x,g22.15)') (i,znormvor(i),i=1,nflevg)
-			write(nout,'("T SPNORM=",2x,i3,x,g22.15)') (i,znormt(i),i=1,nflevg)
+			call spnorm(1,zsp,ivsetsc,znormsp,"SP")
+			call spnorm(nflevg,zvor,ivset,znormvor,"VOR")
+			call spnorm(nflevg,zdiv,ivset,znormdiv,"DIV")
+			call spnorm(nflevg,zt(:,:,1),ivset,znormt,"T")
 
 			if (jstep == 1) then
-				znormsp1(1) = znormsp(1)
+				znormsp1 = znormsp
 				znormdiv1(:) = znormdiv(:)
 				znormvor1(:) = znormvor(:)
 				znormt1(:) = znormt(:)
@@ -615,30 +544,25 @@ program transform_test
 
 	ztloop = (timef()-ztloop)/1000
 
-	if (nprintnorms > 0) then
+	if (nprintnorms == 0) then
 		write(nout,*) "Spectral norms:"
-		call specnorm(zsp,ivsetsc,pnorm=znormsp)
-		call specnorm(zvor(1:nflevl,:),ivset,pnorm=znormvor)
-		call specnorm(zdiv(1:nflevl,:),ivset,pnorm=znormdiv)
-		call specnorm(zt(1:nflevl,:,1),ivset,pnorm=znormt)
+		call spnorm(1,zsp,ivsetsc,znormsp,"SP")
+		call spnorm(nflevg,zvor,ivset,znormvor,"VOR")
+		call spnorm(nflevg,zdiv,ivset,znormdiv,"DIV")
+		call spnorm(nflevg,zt(:,:,1),ivset,znormt,"T")
+	end if
 
-		write(nout,'("SP SPNORM=",4x,g22.15)') znormsp(1)
-		write(nout,'("DIV SPNORM=",i3,x,g22.15)') (i,znormdiv(i),i=1,nflevg)
-		write(nout,'("VOR SPNORM=",i3,x,g22.15)') (i,znormvor(i),i=1,nflevg)
-		write(nout,'("T SPNORM=",2x,i3,x,g22.15)') (i,znormt(i),i=1,nflevg)
+	if (myproc == 1) then
+		zmaxerr(1) = sperror(1,znormsp,znormsp1)
+		zmaxerr(2) = sperror(nflevg,znormdiv,znormdiv1)
+		zmaxerr(3) = sperror(nflevg,znormvor,znormvor1)
+		zmaxerr(4) = sperror(nflevg,znormt,znormt1)
 
-		if (myproc == 1) then
-			zmaxerr(1) = sperror(1,znormsp,znormsp1)
-			zmaxerr(2) = sperror(nflevg,znormdiv,znormdiv1)
-			zmaxerr(3) = sperror(nflevg,znormvor,znormvor1)
-			zmaxerr(4) = sperror(nflevg,znormt,znormt1)
-
-			write(nout,'("SURFACE PRESSURE MAX ERROR=",E10.3)') zmaxerr(1)
-			write(nout,'("DIVERGENCE MAX ERROR=",E10.3)') zmaxerr(2)
-			write(nout,'("VORTICITY MAX ERROR=",E10.3)') zmaxerr(3)
-			write(nout,'("TEMPERATURE MAX ERROR=",E10.3)') zmaxerr(4)
-			write(nout,'("GLOBAL MAX ERROR=",E10.3)') maxval(zmaxerr)
-		end if
+		write(nout,'("SURFACE PRESSURE MAX ERROR=",E10.3)') zmaxerr(1)
+		write(nout,'("DIVERGENCE MAX ERROR=",E10.3)') zmaxerr(2)
+		write(nout,'("VORTICITY MAX ERROR=",E10.3)') zmaxerr(3)
+		write(nout,'("TEMPERATURE MAX ERROR=",E10.3)') zmaxerr(4)
+		write(nout,'("GLOBAL MAX ERROR=",E10.3)') maxval(zmaxerr)
 	end if
 
 	write(nout,*) "Statistics for iterations"
@@ -678,7 +602,7 @@ program transform_test
 	if (myproc /= 1) close(nout)
 
 	deallocate(zgmv,zgmvs)
-   if (ndimgmv == 5) deallocate(zwind)
+	if (ndimgmv == 5) deallocate(zwind)
 
 	call mpl_barrier()
 	call mpl_end()
@@ -790,28 +714,6 @@ contains
 		nb = min(ja,ib)
 	end subroutine
 
-	subroutine readgrib_resol(cinsf,nsmax)
-		integer(kind=jpim),intent(out) :: nsmax
-		character(len=127) :: cinsf
-
-		integer(kind=jpim) :: insf,iret,igrib(1)
-		character(len=127) :: cgridtype
-
-		call grib_open_file(insf,cinsf,"R",iret)
-		if (iret /= grib_success) call abor1("ERROR OPENING FILE INPUT SPECTRAL FILE")
-
-		call grib_new_from_file(insf,igrib(1),iret)
-		if (iret /= grib_success) call abor1("ERROR GRIB_NEW_FROM_FILE")
-
-		call grib_get(igrib(1),"gridType",cgridtype,iret)
-		if (cgridtype /= "sh") call abor1("INPUT DATA NOT IN SPECTRAL FORM")
-
-		call grib_get(igrib(1),"pentagonalResolutionParameterJ",nsmax)
-
-		call grib_release(igrib(1))
-		call grib_close_file(insf)
-	end subroutine
-
 	subroutine setndgl(nlin,nq,nsmax,ndgl)
 		integer(kind=jpim),intent(in) :: nlin,nq,nsmax
 		integer(kind=jpim),intent(out) :: ndgl
@@ -867,21 +769,151 @@ contains
 		end if
 	end subroutine
 
-	subroutine grib_copy(igrib)
-		integer(kind=jpim),intent(in) :: igrib(1)
+#ifdef GRIB_API
+	subroutine readgrib_resol(insf,nsmax)
+		integer(kind=jpim),intent(in) :: insf
+		integer(kind=jpim),intent(out) :: nsmax
 
-		integer(kind=jpim) :: igribout,ioutsf,iret
+		integer(kind=jpim) :: iret,igrib(1)
+		character(len=127) :: cgridtype
 
-		igribout = 0
+		call grib_new_from_file(insf,igrib(1),iret)
+		if (iret /= grib_success) call abor1("ERROR GRIB_NEW_FROM_FILE")
 
-		call grib_clone(igrib(1),igribout,iret)
-		if (iret /= grib_success) call abor1("ERROR GRIB_CLONE")
+		call grib_get(igrib(1),"gridType",cgridtype,iret)
+		if (cgridtype /= "sh") call abor1("INPUT DATA NOT IN SPECTRAL FORM")
 
-		call grib_write(igribout,ioutsf,iret)
-		if (iret /= grib_success) call abor1("ERROR GRIB_WRITE")
+		call grib_get(igrib(1),"pentagonalResolutionParameterJ",nsmax)
 
-		call grib_release(igribout)
+		call grib_release(igrib(1))
 	end subroutine
+
+	subroutine readgrib(insf,nflevg,nspec2g,ivset,ivsetsc,zsp,zvor,zdiv,zt)
+		integer(kind=jpim),intent(in) :: insf,nflevg,nspec2g,ivset(:),ivsetsc(:)
+		real(jprb),intent(out) :: zsp(:,:),zvor(:,:),zdiv(:,:),zt(:,:,:)
+
+		integer(kind=jpim) :: iflds,icode,jroc,itag,iret,igribout,ioutsf
+		integer(kind=jpim) :: iparam(1),igrib(1),iedition(1),icurlev(1)
+		real(kind=jprb),allocatable :: zvorg(:,:),zdivg(:,:),zspg(:,:),ztg(:,:,:),zfpdat(:)
+
+		itag = 54321
+		igrib(1) = 0
+		icode = 0
+		ilastlev = 0
+
+		if (myproc == 1) then
+			write(nout,*) "allocate full-grid spectral data",nflevg,nspec2g
+			allocate(zfpdat(nspec2g))
+			allocate(zvorg(nflevg,nspec2g))
+			allocate(zdivg(nflevg,nspec2g))
+			allocate(ztg(nflevg,nspec2g,1))
+			allocate(zspg(1,nspec2g))
+		end if
+
+		do
+			if (myproc == 1) then
+				write(nout,*) "read spectral data from GRIB file"
+				call grib_new_from_file(insf,igrib(1),iret)
+				if (iret == grib_end_of_file) exit
+
+				if (iflds < nfldx) then
+					if (iret /= grib_success) call abor1("ERROR GRIB_NEW_FROM_FILE")
+
+					call grib_get(igrib(1),"edition",iedition(1),iret)
+					call grib_get(igrib(1),"paramId",iparam(1),iret)
+
+					if (iparam(1) /= icode.and.icode /= 0) then
+						print*,"FIELD ",iparam(1)," NOT TRANSFORMED"
+						igribout = 0
+
+						call grib_clone(igrib(1),igribout,iret)
+						if (iret /= grib_success) call abor1("ERROR GRIB_CLONE")
+
+						call grib_write(igribout,ioutsf,iret)
+						if (iret /= grib_success) call abor1("ERROR GRIB_WRITE")
+
+						call grib_release(igribout)
+
+						cycle
+					end if
+
+					call grib_get(igrib(1),"level",icurlev,iret)
+					call grib_get(igrib(1),"shortName",cfname,iret)
+					call grib_get(igrib(1),"values",zfpdat,iret)
+
+					call grib_release(igrib(1))
+
+					ilev = icurlev(1)
+					if (ilev > nflevg) call abor1("NFLEVG < ILASTLEV")
+					ilastlev = max(ilev,ilastlev)
+
+					if (cfname == "lnsp") then
+						zspg(1,:) = zfpdat(:)
+						iflds = iflds+1
+					else if (cfname == "vo") then
+						zvorg(ilev,:) = zfpdat(:)
+						iflds = iflds+1
+					else if (cfname == "d") then
+						zdivg(ilev,:) = zfpdat(:)
+						iflds = iflds+1
+					else if (cfname == "t") then
+						ztg(ilev,:,1) = zfpdat(:)
+						iflds = iflds+1
+					end if
+				end if
+
+				if (nproc > 1) then
+					do jroc=2,nproc
+						call mpl_send(ilev,nprcids(jroc),itag)
+					end do
+				end if
+			else
+				call mpl_recv(ilev,nprcids(1),itag)
+			end if
+
+			if (nproc > 1) then
+				if (ilev > 0) call mpl_broadcast(iparam(1),itag,1,cdstring='transform_test:')
+				call mpl_barrier()
+			end if
+
+			if (ilev == 0) exit
+		end do
+
+		if (myproc == 1) call grib_close_file(insf)
+
+		if (nproc > 1) then
+			call mpl_broadcast(iflds,itag,1,cdstring='transform_test:')
+			call mpl_broadcast(ilastlev,itag,1,cdstring='transform_test:')
+		end if
+
+		if (ilastlev < 1) call abor1("ILASTLEV < 1")
+
+		if (ilastlev < nflevg) then
+			if (myproc == 1) then
+				write(nout,*) "fill sp data for non read levels, from",ilastlev
+
+				do ilev=ilastlev+1,nflevg
+					zvorg(ilev,:) = zvorg(mod(ilev-1,ilastlev)+1,:)
+					zdivg(ilev,:) = zdivg(mod(ilev-1,ilastlev)+1,:)
+					ztg(ilev,:,1) = ztg(mod(ilev-1,ilastlev)+1,:,1)
+				end do
+			end if
+		end if
+
+		write(nout,'("SPECTRAL FIELDS HAVE BEEN SUCCESSFULY READ, IFLDS=",I3)') iflds
+
+		allocate(ito(iflds))
+		ito(:) = 1
+
+		call dist_spec(pspecg=zspg,kfdistg=1,kfrom=ito,pspec=zsp,kvset=ivsetsc)
+		call dist_spec(zvorg,kfdistg=nflevg,kfrom=ito,pspec=zvor,kvset=ivset)
+		call dist_spec(zdivg,kfdistg=nflevg,kfrom=ito,pspec=zdiv,kvset=ivset)
+		call dist_spec(ztg(:,:,1),kfdistg=nflevg,kfrom=ito,pspec=zt(:,:,1),kvset=ivset)
+		call dist_spec(zspg,kfdistg=1,kfrom=ito,pspec=zsp,kvset=ivsetsc)
+
+		if (myproc == 1) deallocate(ito,zfpdat,zvorg,zdivg,ztg,zspg)
+	end subroutine
+#endif
 
 	subroutine initspec(nsmax,zsp,sp3d)
 		integer,intent(in) :: nsmax
@@ -901,7 +933,8 @@ contains
 		allocate(myms(nump))
 		call trans_inq(kmyms=myms)
 
-		linit = any(myms(:) == m_num)
+		!linit = true.any(myms(:) == m_num)
+		linit = .true.
 		nfield = size(sp3d,3)
 
 		write(nout,"(/,'SP dims (nsmax/nump):',3(x,i0),l2)") nsmax,nump,nfield,linit
@@ -978,11 +1011,26 @@ contains
 		close(iunit)
 	end subroutine
 
+	subroutine spnorm(nl,zsp,ivset,pm,cname)
+		integer(jpim),intent(in) :: nl,ivset(:)
+		character(len=*),intent(in) :: cname
+		real(jprb),intent(in) :: zsp(:,:)
+		real(jprb),intent(out) :: pm(nl)
+
+		integer(jpim) :: i
+
+		call specnorm(zsp,ivset,pnorm=pm)
+
+		do i=1,nl
+			write(nout,"('SPEC',a3,':',x,i3,x,g22.15)") trim(cname),i,pm(i)
+		end do
+	end subroutine
+
 	real function sperror(n,znorm,znorm1)
 		integer(kind=jpim),intent(in) :: n
-		real(kind=jprb),intent(in) :: znorm(:),znorm1(:)
+		real(kind=jprb),intent(in) :: znorm(n),znorm1(n)
 
-		sperror = maxval(abs(znorm1(1:n)/znorm(1:n)-1),1)
+		sperror = maxval(abs(znorm1/znorm-1),1)
 	end function
 
 	function mnx(z) result(zmnx)
@@ -1028,48 +1076,73 @@ contains
 		end if
 	end subroutine
 
-	subroutine gpnorm(zgp,nf,pm,pn,px)
-		integer(jpim),intent(in) :: nf
-		real(jprb),intent(in) :: zgp(:,:,:,:)
-		real(jprb),intent(out) :: pm(nf),pn(nf),px(nf)
+	subroutine gpnorm(cname,zgp,pm,pn,px,psd)
+		character(len=*),intent(in) :: cname
+		real(jprb),intent(in) :: zgp(:,:,:)
+		real(jprb),intent(out) :: pm(nflevg),pn(nflevg),px(nflevg),psd(nflevg)
 
-      integer(jpim) :: i
-		real(jprb) :: zm(nflevg),zn(nflevg),zx(nflevg)
+		integer(jpim) :: i
+		real(jprb) :: zdev(nproma,nflevg,ngpblks),zn(nflevg),zx(nflevg)
 
-      do i=1,nf
-			call gpnorm_trans(zgp(:,:,i,:),nflevg,nproma,zm,zn,zx,.false.,kresol=1)
-			pm(i) = sum(zm)/nflevg
-			pn(i) = minval(zn)
-			px(i) = maxval(zx)
+		call gpnorm_trans(zgp,nflevg,nproma,pm,pn,px,.false.,kresol=1)
+
+		!do i=1,nflevg
+		!	zdev(:,i,:) = (zgp(:,i,:)-pm(i))**2
+		!end do
+
+		!call gpnorm_trans(zdev,nflevg,nproma,psd,zn,zx,.false.,kresol=1)
+		!psd(:) = sqrt(psd)
+
+      psd(:) = 0
+		do i=1,nflevg
+			write(nout,"('GPUV ',a,':',x,i3,4(x,g22.15))") trim(cname),i,pn(i),pm(i),px(i),&
+				psd(i)
 		end do
 	end subroutine
 
-   subroutine gpnorms(zgmvs,zgpt,zwind,zuv)
-      real(jprb),intent(in) :: zgmvs(:,:,:),zgpt(:,:,:,:),zwind(:,:,:,:),zuv(:,:,:,:)
+	subroutine gpnorms2d(zgmvs)
+		real(jprb),intent(in) :: zgmvs(:,:,:)
 
-      real(jprb) :: zm(10),zn(10),zx(10)
+		integer(jpim) :: nf
+		real(jprb) :: z3(nproma,3,ngpblks),zm(3),zn(3),zx(3),zsdm(3),zsdn(3),zsdx(3)
 
-		call gpnorm_trans(zgmvs,3,nproma,zm,zn,zx,.false.,kresol=1)
-		write(nout,"('GMVS P *:',3(x,g22.15))") zn(1),zm(1),zx(1)
-		write(nout,"('GMVS Pl:',3(x,g22.15))") zn(2),zm(2),zx(2)
-		write(nout,"('GMVS Pm:',3(x,g22.15))") zn(3),zm(3),zx(3)
+		nf = 1
+		if (lscders) nf = 3
+		call gpnorm_trans(zgmvs,nf,nproma,zm,zn,zx,.false.,kresol=1)
+		!do i=1,nf
+		!	z3(:,i,:) = (zgmvs(:,i,:)-zm(i))**2
+		!end do
+		!call gpnorm_trans(z3,nf,nproma,zsdm,zsdn,zsdx,.false.,kresol=1)
 
-		call gpnorm(zwind,2,zm,zn,zx)
-		if (lvorgp) write(nout,"('GPUV VOR?:',3(x,g22.15))") zn(1),zm(1),zx(1)
-		if (lvorgp.and.ldivgp) then
-         write(nout,"('GPUV DIV?:',3(x,g22.15))") zn(2),zm(2),zx(2)
-		else if (ldivgp) then
-         write(nout,"('GPUV DIV?:',3(x,g22.15))") zn(1),zm(1),zx(1)
+      zsdm(:) = 0
+		write(nout,"('GMVS P *: 1',4(x,g22.15))") zn(1),zm(1),zx(1),zsdm(1)
+		if (lscders) then
+			write(nout,"('GMVS Pl: 1',4(x,g22.15))") zn(2),zm(2),zx(2),zsdm(2)
+			write(nout,"('GMVS Pm: 1',4(x,g22.15))") zn(3),zm(3),zx(3),zsdm(3)
+		end if
+	end subroutine
+
+	subroutine gpnorms3d(zgpt,zvd,zuv)
+		real(jprb),intent(in) :: zgpt(:,:,:,:),zvd(:,:,:,:),zuv(:,:,:,:)
+
+		integer(jpim) :: i
+		real(jprb) :: zm(nflevg),zn(nflevg),zx(nflevg),zsd(nflevg)
+
+		if (lvorgp) call gpnorm("VOR *",zvd(:,:,1,:),zm,zn,zx,zsd)
+
+		if (ldivgp) then
+			i = 1
+			if (lvorgp) i = 2
+			call gpnorm("DIV *",zvd(:,:,i,:),zm,zn,zx,zsd)
 		end if
 
-		call gpnorm(zuv,2,zm,zn,zx)
-		write(nout,"('GPUV U *:',3(x,g22.15))") zn(1),zm(1),zx(1)
-		write(nout,"('GPUV V *:',3(x,g22.15))") zn(2),zm(2),zx(2)
+		call gpnorm("U *",zuv(:,:,1,:),zm,zn,zx,zsd)
+		call gpnorm("V *",zuv(:,:,2,:),zm,zn,zx,zsd)
 
-		call gpnorm(zgpt,5,zm,zn,zx)
-		write(nout,"('GMV T:',3(x,g22.15))") zn(1),zm(1),zx(1)
-		write(nout,"('GMV Tl?:',3(x,g22.15))") zn(2),zm(2),zx(2)
-		write(nout,"('GMV Tm?:',3(x,g22.15))") zn(3),zm(3),zx(3)
-   end subroutine
+		call gpnorm("T *",zgpt(:,:,1,:),zm,zn,zx,zsd)
+		if (lscders) then
+			call gpnorm("Tl?",zgpt(:,:,2,:),zm,zn,zx,zsd)
+			call gpnorm("Tm?",zgpt(:,:,3,:),zm,zn,zx,zsd)
+		end if
+	end subroutine
 end program
-

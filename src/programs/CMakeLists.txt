@@ -38,7 +38,7 @@ set( HAVE_sp ${HAVE_SINGLE_PRECISION} )
 if( HAVE_GPU )
   foreach( prec sp dp )
     if( HAVE_${prec} )
-      ecbuild_add_executable(TARGET  driver-spectrans-${prec}
+      ecbuild_add_executable(TARGET  driver-spectraltransform-${prec}
                              SOURCES driver-spectraltransform.F90
                              INCLUDES
                                   ${MPI_Fortran_INCLUDE_PATH}
@@ -54,7 +54,7 @@ if( HAVE_GPU )
                                   nvToolsExt
 								  
                           )
-	ecbuild_add_executable(TARGET  driver-spectrans-CA-${prec}
+	ecbuild_add_executable(TARGET  driver-spectraltransform-CA-${prec}
                              SOURCES driver-spectraltransform.F90
                              INCLUDES
                                   ${MPI_Fortran_INCLUDE_PATH}
