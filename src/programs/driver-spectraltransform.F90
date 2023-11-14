@@ -40,7 +40,7 @@ program transform_test
 	real(kind=jprb),pointer :: zvor(:,:),zdiv(:,:),zt(:,:,:),zuv(:,:,:,:),zgpt(:,:,:,:),&
 		zwind(:,:,:,:)
 
-	namelist/namrgri/ndgl,nlin,nq,nsmax,rgri
+	namelist/namrgri/ndgl,nlin,nq,nsmax,rgri,cgrid
 	!namelist/namtrans/nprintnorms,niter,nproma,npromatr,nspecresmin,mbx_size
 	namelist/namstats/lstats,lstack,lbarrier_stats,lbarrier_stats2,ltrace_stats,&
 		ldetailed_stats,lstats_alloc,lstats_comms,lstats_mpl,lstats_omp,lstats_mem,&
@@ -168,7 +168,7 @@ program transform_test
 		close(4)
 		write(nout,*) "nsmax/ndgl/nlin/nq:",nsmax,ndgl,nlin,nq
 
-		if (ndgl <= 0.or.ndgl > nrgri) call abor1("Error: ndgl <= 0 or ndgl > nrgri")
+		if (ndgl < 0.or.ndgl > nrgri) call abor1("Error: ndgl <= 0 or ndgl > nrgri")
 
 		if (len_trim(cgrid) == 0) then
 			if (ndgl <= 0) call abor1("Error: ndgl <= 0 and no grid tag")
