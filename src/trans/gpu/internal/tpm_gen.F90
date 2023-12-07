@@ -29,8 +29,6 @@ INTEGER(KIND=JPIM) :: NPROMATR        ! Packet size for transform (in no of fiel
                              ! NPROMATR=0 means do all fields together (dflt)
 
 LOGICAL   :: LALLOPERM       ! Allocate some shared data structures permanently
-LOGICAL   :: LALLOPERM2
-
 LOGICAL   :: LMPOFF          ! true: switch off message passing
 LOGICAL   :: LSYNC_TRANS     ! true: activate barriers in trmtol and trltom
 
@@ -39,6 +37,11 @@ LOGICAL   :: LSYNC_TRANS     ! true: activate barriers in trmtol and trltom
 ! 1 = Use ISENDs, use blocking RECVs, add barrier at the end of each cycle
 ! 2 = Use buffered SENDs, use blocking RECVs, add barrier at the end of each cycle
 INTEGER(KIND=JPIM) :: NTRANS_SYNC_LEVEL = 0
+
+! NSTACK_MEMORY_TR : optional memory strategy in gridpoint transpositions
+! = 0 : prefer heap (slower but less memory consuming)
+! > 0 : prefer stack (faster but more memory consuming)
+INTEGER(KIND=JPIM) :: NSTACK_MEMORY_TR = 0
 
 LOGICAL, ALLOCATABLE :: LENABLED(:)   ! true: the resolution is enabled (it has been
                                       ! initialised and has not been released afterward) 
