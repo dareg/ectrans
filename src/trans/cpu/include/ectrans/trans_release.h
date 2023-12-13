@@ -40,14 +40,7 @@ SUBROUTINE TRANS_RELEASE(KRESOL)
 !     ------------------------------------------------------------------
 
 USE PARKIND1  ,ONLY : JPIM
-
-!ifndef INTERFACE
-
-USE DEALLOC_RESOL_MOD   ,ONLY : DEALLOC_RESOL
-!
-
 IMPLICIT NONE
-
 INTEGER(KIND=JPIM),INTENT(IN) :: KRESOL
 
 

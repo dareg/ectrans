@@ -49,11 +49,6 @@ SUBROUTINE SUGAWC(KDGLG,PMU,PW)
 
 USE PARKIND1  ,ONLY : JPRD, JPIM
 
-!ifndef INTERFACE
-
-USE SUGAW_MOD
-
-!endif INTERFACE
 
 !     ------------------------------------------------------------------
 
