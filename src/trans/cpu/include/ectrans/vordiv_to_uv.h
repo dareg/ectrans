@@ -1,6 +1,6 @@
-! (C) Copyright 2000- ECMWF.
+! (C) Copyright 2015- ECMWF.
 ! (C) Copyright 2013- Meteo-France.
-!
+! 
 ! This software is licensed under the terms of the Apache Licence Version 2.0
 ! which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 ! In applying this licence, ECMWF does not waive the privileges and immunities
@@ -53,6 +53,18 @@ SUBROUTINE VORDIV_TO_UV(PSPVOR,PSPDIV,PSPU,PSPV,KSMAX,KVSETUV)
 
 USE PARKIND1  ,ONLY : JPIM     ,JPRB
 
+!ifndef INTERFACE
+
+USE TPM_GEN         ,ONLY : NERR, NOUT,MSETUP0
+USE TPM_DISTR       ,ONLY : D, NPRTRV, MYSETV
+
+USE SET_RESOL_MOD   ,ONLY : SET_RESOL
+USE VD2UV_CTL_MOD ,ONLY   : VD2UV_CTL
+USE ABORT_TRANS_MOD ,ONLY : ABORT_TRANS
+USE YOMHOOK   ,ONLY : LHOOK,   DR_HOOK, JPHOOK
+
+!endif INTERFACE
+
 IMPLICIT NONE
 
 ! Declaration of arguments
@@ -64,5 +76,9 @@ REAL(KIND=JPRB), INTENT(OUT) :: PSPV(:,:)
 INTEGER(KIND=JPIM) , INTENT(IN) :: KSMAX
 INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN) :: KVSETUV(:)
 
+!ifndef INTERFACE 
+!endif INTERFACE
+
 END SUBROUTINE VORDIV_TO_UV
+
 END INTERFACE

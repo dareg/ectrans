@@ -1,6 +1,6 @@
-! (C) Copyright 2000- Meteo France.
-! (C) Copyright 2000- Meteo-France.
-
+! (C) Copyright 2012- Meteo-France.
+! (C) Copyright 2012- ECMWF.
+! 
 ! This software is licensed under the terms of the Apache Licence Version 2.0
 ! which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
 ! In applying this licence, ECMWF does not waive the privileges and immunities
@@ -44,10 +44,20 @@ SUBROUTINE GET_CURRENT(KRESOL,LDLAM)
 
 USE PARKIND1  ,ONLY : JPIM
 
+!ifndef INTERFACE
+
+USE TPM_GEN,      ONLY : NCUR_RESOL
+USE TPM_GEOMETRY, ONLY : G
+
+!endif INTERFACE
+
 IMPLICIT NONE
 
 INTEGER(KIND=JPIM)  ,OPTIONAL,INTENT(OUT)  :: KRESOL
 LOGICAL             ,OPTIONAL,INTENT(OUT)  :: LDLAM
+
+!ifndef INTERFACE
+!endif INTERFACE
 
 END SUBROUTINE GET_CURRENT
 END INTERFACE

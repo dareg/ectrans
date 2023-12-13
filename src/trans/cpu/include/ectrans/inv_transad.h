@@ -9,23 +9,23 @@
 !
 
 INTERFACE
-SUBROUTINE INV_TRANS(PSPVOR,PSPDIV,PSPSCALAR,PSPSC3A,PSPSC3B,PSPSC2,&
+SUBROUTINE INV_TRANSAD(PSPVOR,PSPDIV,PSPSCALAR,PSPSC3A,PSPSC3B,PSPSC2,&
  & FSPGL_PROC,&
- & LDSCDERS,LDVORGP,LDDIVGP,LDUVDER,LDLATLON,KPROMA,KVSETUV,KVSETSC,KRESOL,&
+ & LDSCDERS,LDVORGP,LDDIVGP,LDUVDER,KPROMA,KVSETUV,KVSETSC,KRESOL,&
  & KVSETSC3A,KVSETSC3B,KVSETSC2,&
  & PGP,PGPUV,PGP3A,PGP3B,PGP2)
 
-!**** *INV_TRANS* - Inverse spectral transform.
+!**** *INV_TRANSAD* - Inverse spectral transform - adjoint.
 
 !     Purpose.
 !     --------
-!        Interface routine for the inverse spectral transform
+!        Interface routine for the inverse spectral transform - adjoint
 
 !**   Interface.
 !     ----------
-!     CALL INV_TRANS(...)
+!     CALL INV_TRANSAD(...)
 
-!     Explicit arguments : All arguments are optional.
+!     Explicit arguments : All arguments except from PGP are optional.
 !     --------------------
 !     PSPVOR(:,:) - spectral vorticity (input)
 !     PSPDIV(:,:) - spectral divergence (input)
@@ -39,7 +39,6 @@ SUBROUTINE INV_TRANS(PSPVOR,PSPDIV,PSPSCALAR,PSPSC3A,PSPSC3B,PSPSC2,&
 !     LDVORGP     - indicating if grid-point vorticity is req.
 !     LDDIVGP     - indicating if grid-point divergence is req.
 !     LDUVDER     - indicating if E-W derivatives of u and v are req.
-!     LDLATLON   - indicating if regular lat-lon output requested
 !     KPROMA      - required blocking factor for gridpoint output
 !     KVSETUV(:)  - indicating which 'b-set' in spectral space owns a
 !                   vor/div field. Equivalant to NBSETLEV in the IFS.
@@ -86,7 +85,7 @@ SUBROUTINE INV_TRANS(PSPVOR,PSPDIV,PSPSCALAR,PSPSC3A,PSPSC3B,PSPSC2,&
 !     of calling INV_TRANS is to avoid uneccessary copies where your data
 !     structures don't fit in to the 'PSPVOR,PSPDIV, PSPSCALAR, PGP' layout.
 !     The use of any of these precludes the use of PGP and vice versa.
-
+!
 !     PGPUV(:,:,:,:) - the 'u-v' related grid-point variables in the order
 !                      described for PGP. The second dimension of PGPUV should
 !                      be the same as the "global" first dimension of
@@ -105,12 +104,13 @@ SUBROUTINE INV_TRANS(PSPVOR,PSPDIV,PSPSCALAR,PSPSC3A,PSPSC3B,PSPSC2,&
 !                      dimensioned(NPROMA,IFLDS,NGPBLKS)
 !                      IFLDS is the number of 'variables' (the same as in
 !                      PSPSC2 if no derivatives, 3 times that with der.)
+
 !     Method.
 !     -------
 
 !     Externals.  SET_RESOL   - set resolution
-!     ----------  LTINV_CTL   - control of Legendre transform
-!                 FTINV_CTL   - control of Fourier transform
+!     ----------  LTDIR_CTLAD   - control of Legendre transform
+!                 FTDIR_CTLAD   - control of Fourier transform
 
 !     Author.
 !     -------
@@ -119,8 +119,6 @@ SUBROUTINE INV_TRANS(PSPVOR,PSPDIV,PSPSCALAR,PSPSC3A,PSPSC3B,PSPSC2,&
 !     Modifications.
 !     --------------
 !        Original : 00-03-03
-!        26-02-03 Mats Hamrud & Gabor Radnoti : modified condition for scalar fields
-!                                               and derivatives (IF_SCALARS_G)
 
 !     ------------------------------------------------------------------
 
@@ -130,17 +128,18 @@ USE PARKIND1  ,ONLY : JPIM     ,JPRB
 
 USE TPM_GEN         ,ONLY : NERR, NOUT, NPROMATR
 !USE TPM_DIM
-USE TPM_TRANS       ,ONLY : LDIVGP, LSCDERS, LUVDER, LVORGP, LATLON,  &
-     &                      NF_SC2, NF_SC3A, NF_SC3B, NGPBLKS, NPROMA
+USE TPM_TRANS       ,ONLY : LDIVGP, LSCDERS, LUVDER, LVORGP, &
+     &                      NF_SC2, NF_SC3A, NF_SC3B,        &
+     &                      NGPBLKS, NPROMA
 USE TPM_DISTR       ,ONLY : D, NPRTRV, MYSETV
 !USE TPM_GEOMETRY
 !USE TPM_FIELDS
 !USE TPM_FFT
 
-USE SET_RESOL_MOD     ,ONLY : SET_RESOL
-USE INV_TRANS_CTL_MOD ,ONLY : INV_TRANS_CTL
-USE ABORT_TRANS_MOD   ,ONLY : ABORT_TRANS
-USE YOMHOOK           ,ONLY : LHOOK,   DR_HOOK, JPHOOK
+USE SET_RESOL_MOD   ,ONLY : SET_RESOL
+USE INV_TRANS_CTLAD_MOD ,ONLY : INV_TRANS_CTLAD
+USE ABORT_TRANS_MOD ,ONLY : ABORT_TRANS
+USE YOMHOOK   ,ONLY : LHOOK,   DR_HOOK, JPHOOK
 
 !endif INTERFACE
 
@@ -148,35 +147,34 @@ IMPLICIT NONE
 
 ! Declaration of arguments
 
-REAL(KIND=JPRB)    ,OPTIONAL, INTENT(IN) :: PSPVOR(:,:)
-REAL(KIND=JPRB)    ,OPTIONAL, INTENT(IN) :: PSPDIV(:,:)
-REAL(KIND=JPRB)    ,OPTIONAL, INTENT(IN) :: PSPSCALAR(:,:)
-REAL(KIND=JPRB)    ,OPTIONAL, INTENT(IN) :: PSPSC3A(:,:,:)
-REAL(KIND=JPRB)    ,OPTIONAL, INTENT(IN) :: PSPSC3B(:,:,:)
-REAL(KIND=JPRB)    ,OPTIONAL, INTENT(IN) :: PSPSC2(:,:)
-LOGICAL   ,OPTIONAL, INTENT(IN) :: LDSCDERS
-LOGICAL   ,OPTIONAL, INTENT(IN) :: LDVORGP
-LOGICAL   ,OPTIONAL, INTENT(IN) :: LDDIVGP
-LOGICAL   ,OPTIONAL, INTENT(IN) :: LDUVDER
-LOGICAL   ,OPTIONAL, INTENT(IN) :: LDLATLON
-INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN) :: KPROMA
-INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN) :: KVSETUV(:)
-INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN) :: KVSETSC(:)
-INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN) :: KVSETSC3A(:)
-INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN) :: KVSETSC3B(:)
-INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN) :: KVSETSC2(:)
-INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN) :: KRESOL
+REAL(KIND=JPRB)    ,OPTIONAL, INTENT(OUT) :: PSPVOR(:,:)
+REAL(KIND=JPRB)    ,OPTIONAL, INTENT(OUT) :: PSPDIV(:,:)
+REAL(KIND=JPRB)    ,OPTIONAL, INTENT(OUT) :: PSPSCALAR(:,:)
+REAL(KIND=JPRB)    ,OPTIONAL, INTENT(OUT) :: PSPSC3A(:,:,:)
+REAL(KIND=JPRB)    ,OPTIONAL, INTENT(OUT) :: PSPSC3B(:,:,:)
+REAL(KIND=JPRB)    ,OPTIONAL, INTENT(OUT) :: PSPSC2(:,:)
+LOGICAL   ,OPTIONAL, INTENT(IN)  :: LDSCDERS
+LOGICAL   ,OPTIONAL, INTENT(IN)  :: LDVORGP
+LOGICAL   ,OPTIONAL, INTENT(IN)  :: LDDIVGP
+LOGICAL   ,OPTIONAL, INTENT(IN)  :: LDUVDER
+INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN)  :: KPROMA
+INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN)  :: KVSETUV(:)
+INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN)  :: KVSETSC(:)
+INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN)  :: KVSETSC3A(:)
+INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN)  :: KVSETSC3B(:)
+INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN)  :: KVSETSC2(:)
+INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN)  :: KRESOL
 EXTERNAL  FSPGL_PROC
 OPTIONAL  FSPGL_PROC
-REAL(KIND=JPRB),OPTIONAL    ,INTENT(OUT) :: PGP(:,:,:)
-REAL(KIND=JPRB),OPTIONAL    ,INTENT(OUT) :: PGPUV(:,:,:,:)
-REAL(KIND=JPRB),OPTIONAL    ,INTENT(OUT) :: PGP3A(:,:,:,:)
-REAL(KIND=JPRB),OPTIONAL    ,INTENT(OUT) :: PGP3B(:,:,:,:)
-REAL(KIND=JPRB),OPTIONAL    ,INTENT(OUT) :: PGP2(:,:,:)
+REAL(KIND=JPRB),OPTIONAL    ,INTENT(IN)  :: PGP(:,:,:)
+REAL(KIND=JPRB),OPTIONAL    ,INTENT(IN)  :: PGPUV(:,:,:,:)
+REAL(KIND=JPRB),OPTIONAL    ,INTENT(IN)  :: PGP3A(:,:,:,:)
+REAL(KIND=JPRB),OPTIONAL    ,INTENT(IN)  :: PGP3B(:,:,:,:)
+REAL(KIND=JPRB),OPTIONAL    ,INTENT(IN)  :: PGP2(:,:,:)
 
 !ifndef INTERFACE
 !endif INTERFACE
 
-END SUBROUTINE INV_TRANS
+END SUBROUTINE INV_TRANSAD
 
 END INTERFACE

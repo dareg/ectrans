@@ -1,4 +1,4 @@
-! (C) Copyright 2000- ECMWF.
+! (C) Copyright 2008- ECMWF.
 ! (C) Copyright 2013- Meteo-France.
 ! 
 ! This software is licensed under the terms of the Apache Licence Version 2.0
@@ -16,8 +16,7 @@ SUBROUTINE GPNORM_TRANS(PGP,KFIELDS,KPROMA,PAVE,PMIN,PMAX,LDAVE_ONLY,KRESOL)
 
 !     Purpose.
 !     --------
-!        calculate grid-point norms using a 2 stage (NPRTRV,NPRTRW) communication rather
-!        than an approach using a more expensive global gather collective communication
+!        calculate grid-point norms
 
 !**   Interface.
 !     ----------
@@ -47,23 +46,40 @@ SUBROUTINE GPNORM_TRANS(PGP,KFIELDS,KPROMA,PAVE,PMIN,PMAX,LDAVE_ONLY,KRESOL)
 !     Modifications.
 !     --------------
 !        Original : 19th Sept 2008
-
+!        R. El Khatib 07-08-2009 Optimisation directive for NEC
+!        R. El Khatib 16-Sep-2019 merge with LAM code
 !     ------------------------------------------------------------------
 
 USE PARKIND1  ,ONLY : JPIM     ,JPRB
 
+!ifndef INTERFACE
+
+USE TPM_DIM         ,ONLY : R
+USE TPM_DISTR       ,ONLY : D
+USE TPM_FIELDS      ,ONLY : F
+USE TPM_DIM         ,ONLY : R
+USE SET_RESOL_MOD   ,ONLY : SET_RESOL
+USE YOMHOOK         ,ONLY : LHOOK,   DR_HOOK,   JPHOOK
+USE GPNORM_TRANS_CTL_MOD, ONLY : GPNORM_TRANS_CTL
+
+!endif INTERFACE
+
 IMPLICIT NONE
 
 ! Declaration of arguments
-  
-REAL(KIND=JPRB),INTENT(IN)    :: PGP(:,:,:)
-REAL(KIND=JPRB),INTENT(OUT)   :: PAVE(kfields)
-REAL(KIND=JPRB),INTENT(INOUT) :: PMIN(kfields)
-REAL(KIND=JPRB),INTENT(INOUT) :: PMAX(kfields)
-INTEGER(KIND=JPIM),INTENT(IN) :: KFIELDS
-INTEGER(KIND=JPIM),INTENT(IN) :: KPROMA
-LOGICAL,INTENT(IN)            :: LDAVE_ONLY
-INTEGER(KIND=JPIM) ,OPTIONAL, INTENT(IN)  :: KRESOL
+
+REAL(KIND=JPRB)   ,INTENT(IN)    :: PGP(:,:,:)
+REAL(KIND=JPRB)   ,INTENT(OUT)   :: PAVE(:)
+REAL(KIND=JPRB)   ,INTENT(INOUT) :: PMIN(:)
+REAL(KIND=JPRB)   ,INTENT(INOUT) :: PMAX(:)
+INTEGER(KIND=JPIM),INTENT(IN)    :: KFIELDS
+INTEGER(KIND=JPIM),INTENT(IN)    :: KPROMA
+LOGICAL           ,INTENT(IN)    :: LDAVE_ONLY
+INTEGER(KIND=JPIM),OPTIONAL, INTENT(IN)  :: KRESOL
+
+!ifndef INTERFACE
+!endif INTERFACE
+
 
 END SUBROUTINE GPNORM_TRANS
 END INTERFACE
