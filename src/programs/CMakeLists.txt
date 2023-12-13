@@ -28,6 +28,68 @@ if( HAVE_TOOLS AND TARGET eccodes_f90 )
 
   endforeach()
 
+
+endif()
+
+
+set( HAVE_dp ${HAVE_DOUBLE_PRECISION} )
+set( HAVE_sp ${HAVE_SINGLE_PRECISION} )
+
+if( HAVE_GPU )
+  foreach( prec sp dp )
+    if( HAVE_${prec} )
+      ecbuild_add_executable(TARGET  driver-spectraltransform-${prec}
+                             SOURCES driver-spectraltransform.F90
+                             INCLUDES
+                                  ${MPI_Fortran_INCLUDE_PATH}
+                                  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../trans/gpu/include/ectrans>
+                             LIBS 
+                                  fiat parkind_${prec}
+                                  eccodes_f90 eccodes_memfs
+                                  ${MPI_Fortran_LIBRARIES}
+                                  trans_gpu_static_${prec}
+                                  gpu
+                                  OpenACC::OpenACC_Fortran 
+                                  ${LAPACK_LIBRARIES}
+                                  nvToolsExt
+								  
+                          )
+	ecbuild_add_executable(TARGET  driver-spectraltransform-CA-${prec}
+                             SOURCES driver-spectraltransform.F90
+                             INCLUDES
+                                  ${MPI_Fortran_INCLUDE_PATH}
+                                  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../trans/gpu/include/ectrans>
+                             LIBS 
+                                  fiat parkind_${prec}
+                                  eccodes_f90 eccodes_memfs
+                                  ${MPI_Fortran_LIBRARIES}
+                                  trans_gpu_static_CA_${prec}
+                                  gpu
+                                  OpenACC::OpenACC_Fortran 
+                                  ${LAPACK_LIBRARIES}
+                                  nvToolsExt
+                          )
+		  #trans_gpu_static_${prec}
+		  #gpu
+		  #${CMAKE_BINARY_DIR}/lib/libtrans_gpu_static_${prec}.a
+		  #${CMAKE_BINARY_DIR}/lib/libgpu.a
+      #target_link_libraries( driver-spectraltransform PRIVATE OpenACC::OpenACC_Fortran )
+      set_property( TARGET driver-spectraltransform-${prec} PROPERTY CUDA_ARCHITECTURES 70 )
+      set_property( TARGET driver-spectraltransform-CA-${prec} PROPERTY CUDA_ARCHITECTURES 70 )
+      target_compile_options( driver-spectraltransform-${prec} PRIVATE $<$<COMPILE_LANGUAGE:Fortran>:-g -acc -Minfo=acc -gpu=cc70,lineinfo,deepcopy,fastmath,nordc -cudalib=cufft,cublas -fpic>  )
+      target_compile_options( driver-spectraltransform-CA-${prec} PRIVATE $<$<COMPILE_LANGUAGE:Fortran>:-g -acc -Minfo=acc -gpu=cc70,lineinfo,deepcopy,fastmath,nordc -cudalib=cufft,cublas -fpic>  )
+      set_target_properties(driver-spectraltransform-${prec} PROPERTIES LINK_FLAGS "-acc -cudalib=cufft,cublas -fpic")
+      set_target_properties(driver-spectraltransform-CA-${prec} PROPERTIES LINK_FLAGS "-acc -cudalib=cufft,cublas -fpic")
+      message("NVTX_ROOT = ${NVTX_ROOT}")
+	  if ( NVTX_ROOT )
+		target_link_libraries( driver-spectraltransform-${prec} "${NVTX_ROOT}/lib/libnvtx.a" )
+		target_link_libraries( driver-spectraltransform-CA-${prec} "${NVTX_ROOT}/lib/libnvtx.a" )
+	  endif()
+      message("Building ${prec} GPU driver")
+    endif()
+  endforeach()
+else()
+  ecbuild_warn("HAVE_GPU false so not building GPU driver")
 endif()
 
 # ectrans information tool
