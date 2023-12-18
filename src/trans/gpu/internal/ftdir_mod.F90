@@ -118,7 +118,6 @@ DO KGL=IBEG,IEND,IINC
    ENDDO
 ENDDO
 
-write(0,*) "transfer latitude buffer to FOUBUF_IN",kf_fs
 ! like: foubuf_in(1:2*kf_fs,ista) = zgtf(1:2*kf_fs,ioff+2*jm)
 
 !$ACC PARALLEL LOOP DEFAULT(NONE) COLLAPSE(3) PRIVATE(IGLG,IPROC,ISTA,IOFF)

@@ -106,8 +106,6 @@ SUBROUTINE FTDIR_CTL(KF_UV_G,KF_SCALARS_G,KF_GP,KF_FS,KVSETUV,KVSETSC,KPTRGP,&
 	 ioff = ioff+KF_SCALARS_G
   ENDIF
 
-  write(0,*) "ftdir ivset:",ivset(:)
-
   ! needed ??? JF_FS=KF_FS-D%IADJUST_D
 
   !$ACC KERNELS

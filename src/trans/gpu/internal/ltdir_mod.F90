@@ -44,11 +44,9 @@ SUBROUTINE LTDIR(KF_FS,KF_UV,KF_SCALARS,KLED2,PSPVOR,PSPDIV,PSPSCALAR,&
 
   !$acc data copyin(kf_uv)
 
-  write(0,*) "anti-sym. ledir - nfs/nuv/nle:",kf_fs,kf_uv,kled2
   CALL PRFI2B(KF_FS,KF_UV,ZAIA,-1)
   CALL LEDIR2(KF_FS,KLED2,ZAIA,ZOA1)
 
-  write(0,*) "sym. ledir (idem)"
   CALL PRFI2B(KF_FS,KF_UV,ZAIA,1)
   CALL LEDIR1(KF_FS,KLED2,ZAIA,ZOA1)
 
@@ -57,7 +55,6 @@ SUBROUTINE LTDIR(KF_FS,KF_UV,KF_SCALARS,KLED2,PSPVOR,PSPDIV,PSPSCALAR,&
   IST = 1
 
   IF (KF_UV > 0) THEN
-     write(0,*) "compute vor/div",kf_uv
      CALL UVTVD(KF_UV)
 
     !$ACC DATA PRESENT(PSPVOR,PSPDIV) COPYOUT(PSPVOR,PSPDIV)
